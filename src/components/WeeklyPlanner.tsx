@@ -1,19 +1,28 @@
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Calendar, ShoppingCart, UtensilsCrossed, Clock } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar, ShoppingCart, UtensilsCrossed, Clock, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { DayPlan, Meal, GroceryList } from "@/lib/meal-data";
-import { combineGroceryLists } from "@/lib/meal-data";
+import { saveWeeklyPlan, combineGroceryLists } from "@/lib/meal-data";
 import GroceryListCard from "./GroceryListCard";
+import { toast } from "sonner";
 
 interface Props {
   plan: DayPlan[];
-  onViewMeal: (meal: Meal) => void;
+  onViewMeal: (meal: Meal, dayIndex: number, mealType: string) => void;
   onBack: () => void;
 }
 
 export default function WeeklyPlanner({ plan, onViewMeal, onBack }: Props) {
   const [selectedDay, setSelectedDay] = useState(0);
   const [showGrocery, setShowGrocery] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    saveWeeklyPlan(plan);
+    setSaved(true);
+    toast.success("Weekly plan saved! 📁");
+    setTimeout(() => setSaved(false), 2000);
+  };
 
   const day = plan[selectedDay];
   const allMeals = plan.flatMap(d => [d.breakfast, d.lunch, d.dinner]);
@@ -25,9 +34,20 @@ export default function WeeklyPlanner({ plan, onViewMeal, onBack }: Props) {
         <ChevronLeft size={18} /> Back
       </button>
 
-      <div className="animate-slide-up flex items-center gap-2">
-        <Calendar className="text-peach" size={22} />
-        <h2 className="text-lg font-extrabold text-foreground">7-Day Meal Plan</h2>
+      <div className="animate-slide-up flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Calendar className="text-peach" size={22} />
+          <h2 className="text-lg font-extrabold text-foreground">7-Day Meal Plan</h2>
+        </div>
+        <Button
+          variant={saved ? "secondary" : "outline"}
+          size="sm"
+          className="rounded-xl h-9 gap-1.5"
+          onClick={handleSave}
+        >
+          {saved ? <Check size={14} /> : <Calendar size={14} />}
+          {saved ? "Saved" : "Save Plan"}
+        </Button>
       </div>
 
       {/* Day selector */}
@@ -62,9 +82,9 @@ export default function WeeklyPlanner({ plan, onViewMeal, onBack }: Props) {
 
       {/* Meal cards */}
       <div className="space-y-3">
-        <MealCard meal={day.breakfast} label="🌅 Breakfast" delay="1" onView={onViewMeal} />
-        <MealCard meal={day.lunch} label="☀️ Lunch" delay="2" onView={onViewMeal} />
-        <MealCard meal={day.dinner} label="🌙 Dinner" delay="3" onView={onViewMeal} />
+        <MealCard meal={day.breakfast} label="🌅 Breakfast" delay="1" onView={(m) => onViewMeal(m, selectedDay, "breakfast")} />
+        <MealCard meal={day.lunch} label="☀️ Lunch" delay="2" onView={(m) => onViewMeal(m, selectedDay, "lunch")} />
+        <MealCard meal={day.dinner} label="🌙 Dinner" delay="3" onView={(m) => onViewMeal(m, selectedDay, "dinner")} />
       </div>
 
       {/* Grocery list toggle */}
@@ -97,7 +117,7 @@ function MealCard({ meal, label, delay, onView }: { meal: Meal; label: string; d
     >
       <div className="min-w-0 flex-1">
         <p className="text-xs font-bold text-muted-foreground">{label}</p>
-        <p className="mt-0.5 truncate font-extrabold text-foreground">{meal.name}</p>
+        <p className="mt-0.5 truncate font-extrabold text-foreground">{meal.mealName}</p>
         <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
           <Clock size={12} />
           {meal.cookingTime}

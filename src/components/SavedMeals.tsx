@@ -1,7 +1,7 @@
 import { Trash2, ChefHat, BookmarkX, Play, User } from "lucide-react";
 import type { Meal } from "@/lib/meal-data";
 import { getSavedMeals, removeSavedMeal } from "@/lib/meal-data";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
@@ -10,12 +10,21 @@ interface Props {
 }
 
 export default function SavedMeals({ onSelect }: Props) {
-  const [meals, setMeals] = useState<Meal[]>(getSavedMeals());
+  const [meals, setMeals] = useState<Meal[]>([]);
 
-  const handleRemove = (id: string, e: React.MouseEvent) => {
+  useEffect(() => {
+    const fetchMeals = async () => {
+      const data = await getSavedMeals();
+      setMeals(data);
+    };
+    fetchMeals();
+  }, []);
+
+  const handleRemove = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    removeSavedMeal(id);
-    setMeals(getSavedMeals());
+    await removeSavedMeal(id);
+    const updated = await getSavedMeals();
+    setMeals(updated);
     toast.info("Meal removed");
   };
 
@@ -41,7 +50,7 @@ export default function SavedMeals({ onSelect }: Props) {
               <ChefHat className="text-peach" size={20} />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate font-bold text-foreground">{meal.name}</p>
+              <p className="truncate font-bold text-foreground">{meal.mealName}</p>
               <p className="text-xs text-muted-foreground">
                 {meal.mealType} · {meal.savedAt}
                 {meal.childProfileName && (

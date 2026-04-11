@@ -12,9 +12,10 @@ interface Props {
 export default function CookingMode({ meal, onClose }: Props) {
   const [currentStep, setCurrentStep] = useState(0);
   const [doneSteps, setDoneSteps] = useState<Set<number>>(new Set());
-  const total = meal.steps.length;
+  const steps = meal.steps || [];
+  const total = steps.length;
   const isLast = currentStep === total - 1;
-  const progress = ((currentStep + 1) / total) * 100;
+  const progress = total > 0 ? ((currentStep + 1) / total) * 100 : 0;
 
   const markDone = () => {
     setDoneSteps(prev => {
@@ -31,113 +32,133 @@ export default function CookingMode({ meal, onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 pt-6 pb-3">
-        <div className="flex items-center gap-2">
-          <ChefHat className="text-peach" size={22} />
-          <span className="font-extrabold text-foreground">{meal.name}</span>
-        </div>
-        <button onClick={onClose} className="rounded-xl p-2 text-muted-foreground hover:bg-muted btn-press">
-          <X size={20} />
-        </button>
-      </div>
-
-      {/* Progress bar */}
-      <div className="mx-5 h-2 rounded-full bg-muted overflow-hidden">
-        <div
-          className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-
-      {/* Step counter */}
-      <p className="mt-3 text-center text-sm font-bold text-muted-foreground">
-        Step {currentStep + 1} of {total}
-      </p>
-
-      {/* Step indicators */}
-      <div className="mt-2 flex justify-center gap-1.5 px-8">
-        {meal.steps.map((_, i) => (
-          <div
-            key={i}
-            className={`h-2 rounded-full transition-all duration-300 ${
-              i === currentStep ? "w-6 bg-primary" : doneSteps.has(i) ? "w-2 bg-sage" : "w-2 bg-muted"
-            }`}
-          />
-        ))}
-      </div>
-
-      {/* Step content */}
-      <div className="flex flex-1 items-center justify-center px-8">
-        <div key={currentStep} className="animate-slide-up text-center">
-          <div className={`mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl ${
-            doneSteps.has(currentStep) ? "bg-secondary" : "bg-peach-light"
-          }`}>
-            {doneSteps.has(currentStep) ? (
-              <Check className="text-secondary-foreground" size={28} />
-            ) : (
-              <span className="text-2xl font-extrabold text-peach">{currentStep + 1}</span>
-            )}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 backdrop-blur-sm sm:p-6 md:p-12">
+      <div className="flex h-full w-full flex-col bg-background shadow-2xl transition-all sm:h-auto sm:max-h-[90vh] sm:max-w-2xl sm:rounded-3xl sm:border border-border overflow-hidden animate-in fade-in zoom-in duration-300">
+        
+        {/* Header */}
+        <div className="flex items-center justify-between border-b px-5 py-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-peach-light">
+              <ChefHat className="text-peach" size={20} />
+            </div>
+            <div className="min-w-0">
+              <h2 className="truncate text-sm font-black text-foreground">{meal.mealName}</h2>
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-none">Cooking Mode</p>
+            </div>
           </div>
-          <p className="text-lg font-bold leading-relaxed text-foreground">
-            {meal.steps[currentStep]}
-          </p>
+          <button 
+            onClick={onClose} 
+            className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted transition-colors btn-press"
+          >
+            <X size={20} />
+          </button>
         </div>
-      </div>
 
-      {/* Read aloud */}
-      <div className="flex justify-center pb-2">
-        <button
-          onClick={handleReadAloud}
-          className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted btn-press"
-        >
-          <Volume2 size={16} /> Read Aloud
-        </button>
-      </div>
+        {/* Content Area - Scrollable */}
+        <div className="flex-1 overflow-y-auto px-5 py-8 sm:px-10">
+          {/* Progress Section */}
+          <div className="mb-8 space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Progress</span>
+              <span className="text-[10px] font-black text-primary uppercase tracking-widest">Step {currentStep + 1} / {total}</span>
+            </div>
+            <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full rounded-full bg-primary shadow-[0_0_15px_rgba(255,138,101,0.4)] transition-all duration-500 ease-out"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            {/* Step Dots */}
+            <div className="flex justify-center gap-1.5 pt-1">
+              {steps.map((_, i) => (
+                <div
+                  key={i}
+                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                    i === currentStep ? "w-6 bg-primary" : doneSteps.has(i) ? "w-1.5 bg-green-400" : "w-1.5 bg-muted"
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
 
-      {/* Navigation */}
-      <div className="flex gap-2 px-5 pb-8">
-        <Button
-          variant="outline"
-          size="lg"
-          className="rounded-2xl"
-          onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
-          disabled={currentStep === 0}
-        >
-          <ChevronLeft size={20} />
-        </Button>
+          {/* Current Instruction */}
+          <div key={currentStep} className="animate-slide-up flex flex-col items-center text-center space-y-6">
+            <div className={`flex h-16 w-16 items-center justify-center rounded-2xl shadow-inner transition-all duration-500 ${
+              doneSteps.has(currentStep) ? "bg-green-100 rotate-[360deg]" : "bg-peach-light"
+            }`}>
+              {doneSteps.has(currentStep) ? (
+                <Check className="text-green-600" size={32} />
+              ) : (
+                <span className="text-2xl font-black text-peach">{currentStep + 1}</span>
+              )}
+            </div>
+            <p className="text-lg sm:text-2xl font-bold leading-tight text-foreground balance-text">
+              {steps[currentStep] || "No instructions provided."}
+            </p>
+            
+            <button
+              onClick={handleReadAloud}
+              className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-black text-muted-foreground hover:bg-muted bg-muted/20 transition-all btn-press"
+            >
+              <Volume2 size={14} /> Read Aloud
+            </button>
+          </div>
+        </div>
 
-        <Button
-          variant={doneSteps.has(currentStep) ? "secondary" : "outline"}
-          size="lg"
-          className="rounded-2xl"
-          onClick={markDone}
-        >
-          <Check size={18} /> {doneSteps.has(currentStep) ? "Done" : "Mark Done"}
-        </Button>
+        {/* Navigation Bar - Sticky at Bottom */}
+        <div className="border-t bg-card/50 px-4 py-4 pb-safe sm:px-6 sm:py-6">
+          <div className="flex items-center justify-between gap-3">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-12 w-12 shrink-0 rounded-xl border-2 hover:bg-muted btn-press"
+              onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
+              disabled={currentStep === 0}
+            >
+              <ChevronLeft size={20} />
+            </Button>
 
-        {isLast ? (
-          <Button
-            variant="generate"
-            size="lg"
-            className="flex-1 rounded-2xl"
-            onClick={onClose}
-          >
-            <Check size={20} />
-            Finish!
-          </Button>
-        ) : (
-          <Button
-            variant="generate"
-            size="lg"
-            className="flex-1 rounded-2xl"
-            onClick={() => setCurrentStep(currentStep + 1)}
-          >
-            Next
-            <ChevronRight size={20} />
-          </Button>
-        )}
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <Button
+                variant={doneSteps.has(currentStep) ? "secondary" : "outline"}
+                className={`h-12 flex-1 min-w-0 rounded-xl border-2 font-black text-xs transition-all btn-press ${
+                  doneSteps.has(currentStep) ? "bg-green-100 border-green-200 text-green-700 hover:bg-green-200" : "hover:bg-muted"
+                }`}
+                onClick={markDone}
+              >
+                <div className="flex items-center justify-center gap-1.5 truncate">
+                  <Check size={16} className="shrink-0" />
+                  <span className="truncate">{doneSteps.has(currentStep) ? "Done" : "Mark Done"}</span>
+                </div>
+              </Button>
+
+              {isLast ? (
+                <Button
+                  variant="generate"
+                  className="h-12 flex-1 min-w-0 rounded-xl font-black text-xs shadow-lg shadow-primary/20 transition-all btn-press"
+                  onClick={onClose}
+                >
+                  <div className="flex items-center justify-center gap-1.5 truncate">
+                    <Check size={16} className="shrink-0" />
+                    <span className="truncate">Finish</span>
+                  </div>
+                </Button>
+              ) : (
+                <Button
+                  variant="generate"
+                  className="h-12 flex-1 min-w-0 rounded-xl font-black text-xs shadow-lg shadow-primary/20 transition-all btn-press"
+                  onClick={() => setCurrentStep(currentStep + 1)}
+                >
+                  <div className="flex items-center justify-center gap-1.5 truncate">
+                    <span className="truncate">Next</span>
+                    <ChevronRight size={16} className="shrink-0" />
+                  </div>
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   );

@@ -1,12 +1,15 @@
-import { useState } from "react";
-import { UserPlus, Users, Trash2, Edit2, Check, X, Baby, Scale, Ruler } from "lucide-react";
+import { useState, useEffect } from "react";
+import { UserPlus, Users, Trash2, Edit2, Check, X, Baby, Scale, Ruler, TrendingUp, AlertTriangle } from "lucide-react";
+import GrowthAnalytics from "./GrowthAnalytics";
 import { Button } from "@/components/ui/button";
-import { getChildProfiles, saveChildProfile, removeChildProfile, type ChildProfile } from "@/lib/meal-data";
+import { getChildProfiles, saveChildProfile, removeChildProfile, generateSafeId, type ChildProfile } from "@/lib/meal-data";
+import TagInput from "@/components/TagInput";
 import { toast } from "sonner";
 
 interface Props {
   activeProfileId: string | null;
   onSelect: (profile: ChildProfile) => void;
+  onAuthRequired?: (action: string) => boolean;
 }
 
 const ageOptions = ["6-12 months", "1-2 years", "3-5 years", "6-10 years", "11+ years"];
@@ -14,13 +17,13 @@ const dietOptions = ["Regular", "Vegetarian", "Vegan", "Halal", "Gluten-Free"];
 const goalOptions = ["Balanced nutrition", "Weight gain", "Picky eater friendly", "Brain boost", "Energy boost"];
 
 const emptyProfile = (): ChildProfile => ({
-  id: Date.now().toString(),
+  id: generateSafeId(),
   name: "",
   age: "3-5 years",
   weight: "",
   height: "",
   diet: "Regular",
-  allergies: "",
+  allergies: [],
   goal: "Balanced nutrition",
 });
 
@@ -45,26 +48,48 @@ function ChipSelect({ options, value, onChange, small }: { options: string[]; va
   );
 }
 
-export default function ChildProfiles({ activeProfileId, onSelect }: Props) {
-  const [profiles, setProfiles] = useState<ChildProfile[]>(getChildProfiles());
+export default function ChildProfiles({ activeProfileId, onSelect, onAuthRequired }: Props) {
+  const [profiles, setProfiles] = useState<ChildProfile[]>([]);
   const [editing, setEditing] = useState<ChildProfile | null>(null);
+  const [viewingAnalytics, setViewingAnalytics] = useState<ChildProfile | null>(null);
 
-  const handleSave = () => {
+  useEffect(() => {
+    const fetchProfiles = async () => {
+      const data = await getChildProfiles();
+      setProfiles(data);
+    };
+    fetchProfiles();
+  }, []);
+
+  const handleAdd = () => {
+    if (onAuthRequired && !onAuthRequired("profiles")) return;
+    setEditing(emptyProfile());
+  };
+
+  const handleSave = async () => {
+    if (onAuthRequired && !onAuthRequired("profiles")) return;
     if (!editing) return;
     if (!editing.name.trim()) { toast.error("Please enter a name"); return; }
-    saveChildProfile(editing);
-    setProfiles(getChildProfiles());
+    await saveChildProfile(editing);
+    const updated = await getChildProfiles();
+    setProfiles(updated);
     onSelect(editing);
     setEditing(null);
     toast.success("Profile saved! 👶");
   };
 
-  const handleRemove = (id: string, e: React.MouseEvent) => {
+  const handleRemove = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    removeChildProfile(id);
-    setProfiles(getChildProfiles());
+    if (onAuthRequired && !onAuthRequired("profiles")) return;
+    await removeChildProfile(id);
+    const updated = await getChildProfiles();
+    setProfiles(updated);
     toast.info("Profile removed");
   };
+
+  if (viewingAnalytics) {
+    return <GrowthAnalytics profile={viewingAnalytics} onBack={() => setViewingAnalytics(null)} />;
+  }
 
   return (
     <div className="space-y-3">
@@ -75,7 +100,7 @@ export default function ChildProfiles({ activeProfileId, onSelect }: Props) {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => setEditing(emptyProfile())}
+          onClick={handleAdd}
           className="rounded-xl"
         >
           <UserPlus size={16} /> Add
@@ -133,12 +158,14 @@ export default function ChildProfiles({ activeProfileId, onSelect }: Props) {
             <ChipSelect options={dietOptions} value={editing.diet} onChange={v => setEditing({ ...editing, diet: v })} small />
           </div>
 
-          <input
-            type="text"
-            placeholder="Allergies (e.g. nuts, dairy)"
-            value={editing.allergies}
-            onChange={e => setEditing({ ...editing, allergies: e.target.value })}
-            className="w-full rounded-xl border-2 border-input bg-background px-3 py-2 text-sm font-medium placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
+          <TagInput
+            items={editing.allergies || []}
+            onChange={tags => setEditing({ ...editing, allergies: tags })}
+            icon={<AlertTriangle size={14} className="text-destructive" />}
+            label="Allergies"
+            placeholder="e.g. nuts, dairy"
+            colorScheme="destructive"
+            delay="1"
           />
 
           <div className="space-y-2">
@@ -184,9 +211,17 @@ export default function ChildProfiles({ activeProfileId, onSelect }: Props) {
             <p className="text-xs text-muted-foreground">
               {profile.age} · {profile.diet}
               {profile.weight ? ` · ${profile.weight}kg` : ""}
+              {profile.allergies?.length > 0 && ` · ⚠️ ${profile.allergies.length} allergies`}
             </p>
           </div>
           <div className="flex shrink-0 gap-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); setViewingAnalytics(profile); }}
+              className="rounded-lg p-1.5 text-primary hover:bg-primary/10"
+              title="Growth Analytics"
+            >
+              <TrendingUp size={14} />
+            </button>
             <button
               onClick={(e) => { e.stopPropagation(); setEditing(profile); }}
               className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted"
