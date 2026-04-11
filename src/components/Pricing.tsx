@@ -21,7 +21,7 @@ export default function Pricing({ isOpen, onClose }: Props) {
       price: "$0",
       description: "Perfect for trying us out",
       features: [
-        "3 AI Meal Generations",
+        "Unlimited AI Generations (BETA)",
         "Save up to 2 Kids Profiles",
         "Common Ingredient Filters",
         "Mobile App Access"

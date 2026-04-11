@@ -49,8 +49,18 @@ export default function AuthModal({ isOpen, onClose, onSuccess, title, descripti
 
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        
+        // Fallback: Ensure subscription/usage rows exist after login (in case trigger failed)
+        if (data.user) {
+          const { data: sub } = await supabase.from('user_subscriptions').select('id').eq('user_id', data.user.id).maybeSingle();
+          if (!sub) {
+            await supabase.from('user_subscriptions').insert({ user_id: data.user.id, tier: 'free' });
+            await supabase.from('usage_stats').insert({ user_id: data.user.id, generation_count: 0 });
+          }
+        }
+        
         toast.success("Welcome back! 👶");
       } else {
         const { error } = await supabase.auth.signUp({ 

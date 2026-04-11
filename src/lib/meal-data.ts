@@ -1,5 +1,6 @@
 import { generateAIMeal, generateAIWeeklyPlan } from "./gemini";
 import { supabase } from "./supabase";
+import { toast } from "sonner";
 
 export interface MealForm {
   childAge: string;
@@ -91,6 +92,16 @@ export interface DayPlan {
   breakfast: Meal;
   lunch: Meal;
   dinner: Meal;
+}
+
+export interface UserSubscription {
+  tier: 'free' | 'pro';
+  status: string;
+}
+
+export interface UserUsage {
+  generation_count: number;
+  last_generation_at?: string;
 }
 
 const allMeals: Meal[] = [
@@ -440,8 +451,20 @@ export async function generateMeal(form: MealForm, excludeIds: string[] = []): P
     const meal = await generateAIMeal(form);
     if (user_id) await incrementUsageCount();
     return { ...meal, isAI: true };
-  } catch (error) {
+  } catch (error: any) {
     console.warn("AI generation failed, falling back to mock data:", error);
+    
+    if (error.message === "API Key missing") {
+      toast.error("Gemini API Key missing! Using mock data instead.", {
+        description: "Please add your API key in Vercel settings to enable AI.",
+        duration: 5000,
+      });
+    } else {
+      toast.error("AI Generation Error", {
+        description: "Something went wrong with the AI provider. Using mock data.",
+      });
+    }
+    
     return getMockMeal(form, excludeIds);
   }
 }
@@ -485,8 +508,16 @@ export async function generateWeeklyPlan(form: MealForm): Promise<DayPlan[]> {
     const plan = await generateAIWeeklyPlan(form);
     if (user_id) await incrementUsageCount();
     return plan;
-  } catch (error) {
+  } catch (error: any) {
     console.warn("AI weekly plan generation failed, falling back to mock data:", error);
+    
+    if (error.message === "API Key missing") {
+      toast.error("Gemini API Key missing! Using mock data.", {
+        description: "Add VITE_GEMINI_API_KEY to your env variables.",
+        duration: 5000,
+      });
+    }
+    
     return getMockWeeklyPlan(form);
   }
 }
@@ -557,20 +588,19 @@ export async function migrateLocalData() {
 export async function getChildProfiles(): Promise<ChildProfile[]> {
   try {
     const user_id = await getUserId();
+    if (!user_id) return []; // PROMPT FIX: If not signed in, show NO profiles.
+
     const query = supabase.from('profiles').select('*');
-    if (user_id) query.eq('user_id', user_id);
+    query.eq('user_id', user_id);
     
     const { data, error } = await query;
     if (error) throw error;
     if (data && data.length > 0) return data;
   } catch (err) {
-    console.warn("Supabase fetch profiles failed, falling back to local storage:", err);
+    console.warn("Supabase fetch profiles failed:", err);
   }
 
-  try {
-    const data = localStorage.getItem("smartkids-profiles");
-    return data ? JSON.parse(data) : [];
-  } catch { return []; }
+  return []; // NO fallback for unauthorized users
 }
 
 // Helper for generating unique IDs even in non-secure contexts/older browsers
@@ -640,31 +670,38 @@ export async function removeChildProfile(id: string): Promise<void> {
 export async function getSavedMeals(): Promise<Meal[]> {
   try {
     const user_id = await getUserId();
-    const query = supabase.from('saved_meals').select('*').order('saved_at', { ascending: false });
-    if (user_id) query.eq('user_id', user_id);
-    
-    const { data, error } = await query;
+    if (!user_id) return [];
+
+    const { data, error } = await supabase
+      .from('saved_meals')
+      .select('*')
+      .eq('user_id', user_id);
+      
     if (error) throw error;
     if (data && data.length > 0) {
       return data.map(m => ({
-        ...m,
+        id: m.id,
         mealName: m.meal_name,
+        description: m.description,
         cookingTime: m.cooking_time,
-        mealType: m.meal_type,
-        groceryList: m.grocery_list,
-        savedAt: m.saved_at,
+        difficulty: m.difficulty,
+        ingredients: m.ingredients,
+        steps: Array.isArray(m.steps) ? m.steps : [],
+        tips: Array.isArray(m.tips) ? m.tips : [],
+        mealType: m.meal_type || 'breakfast',
+        nutrition: m.nutrition || {},
+        groceryList: m.grocery_list || { vegetables: [], dairy: [], grains: [], proteins: [], others: [] },
+        alternatives: m.alternatives || [],
         childProfileName: m.child_profile_name,
-        isAI: m.is_ai
+        isAI: m.is_ai || false,
+        savedAt: m.saved_at
       }));
     }
   } catch (err) {
-    console.warn("Supabase fetch meals failed, falling back to local storage:", err);
+    console.warn("Supabase fetch meals failed:", err);
   }
 
-  try {
-    const saved = localStorage.getItem("smartkids-saved-meals");
-    return saved ? JSON.parse(saved) : [];
-  } catch { return []; }
+  return [];
 }
 
 export async function saveMeal(meal: Meal, profileName?: string): Promise<void> {
@@ -736,20 +773,23 @@ export async function saveWeeklyPlan(plan: DayPlan[]): Promise<void> {
 export async function getSavedWeeklyPlan(): Promise<DayPlan[] | null> {
   try {
     const user_id = await getUserId();
-    const query = supabase.from('weekly_plans').select('*').order('created_at', { ascending: false }).limit(1);
-    if (user_id) query.eq('user_id', user_id);
-    
-    const { data, error } = await query;
+    if (!user_id) return null;
+
+    const { data, error } = await supabase
+      .from('weekly_plans')
+      .select('*')
+      .eq('user_id', user_id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
     if (error) throw error;
-    if (data && data.length > 0) return data[0].days;
+    if (data) return data.days as DayPlan[];
   } catch (err) {
-    console.warn("Supabase fetch weekly plan failed, falling back to local storage:", err);
+    console.warn("Supabase fetch weekly plan failed:", err);
   }
 
-  try {
-    const data = localStorage.getItem("smartkids-weekly-plan");
-    return data ? JSON.parse(data) : null;
-  } catch { return null; }
+  return null;
 }
 
 // Growth Tracking
@@ -899,4 +939,96 @@ export async function generateDrink(type: string, age: string, goal: string): Pr
       isAI: false
     };
   }
-}
+};
+
+// --- SUBSCRIPTION & USAGE HELPERS ---
+
+export const getUserSubscription = async (userId: string): Promise<UserSubscription | null> => {
+  try {
+    const { data, error } = await supabase
+      .from('user_subscriptions')
+      .select('tier, status')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Error fetching subscription:", error);
+      return { tier: 'free', status: 'active' }; // Fallback
+    }
+    return data;
+  } catch (e) {
+    return { tier: 'free', status: 'active' };
+  }
+};
+
+export const getUserUsage = async (userId: string): Promise<UserUsage | null> => {
+  try {
+    const { data, error } = await supabase
+      .from('usage_stats')
+      .select('generation_count, last_generation_at')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Error fetching usage stats:", error);
+      return { generation_count: 0 };
+    }
+    return data;
+  } catch (e) {
+    return { generation_count: 0 };
+  }
+};
+
+export const incrementUsage = async (userId: string): Promise<void> => {
+  // UUID validation: Supabase expects a valid UUID. Guest IDs like 'demo-user-...' will fail.
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+  if (!isUUID) {
+    console.log("Skipping usage increment for non-UUID user:", userId);
+    return;
+  }
+
+  try {
+    const { error } = await supabase.rpc('increment_generation_count', {
+      target_user_id: userId
+    });
+    
+    if (error) {
+      console.error("Error incrementing usage:", error);
+      // Fallback if RPC fails, try direct update
+      const { data: existing } = await supabase
+        .from('usage_stats')
+        .select('generation_count')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (existing) {
+        await supabase
+          .from('usage_stats')
+          .update({ 
+            generation_count: (existing.generation_count || 0) + 1,
+            last_generation_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', userId);
+      } else {
+        await supabase
+          .from('usage_stats')
+          .insert({ user_id: userId, generation_count: 1, last_generation_at: new Date().toISOString() });
+      }
+    }
+  } catch (e) {
+    console.error("Critical error in incrementUsage:", e);
+  }
+};
+export const clearAllLocalData = () => {
+  const keys = [
+    "smartkids-profiles",
+    "smartkids-saved-meals",
+    "smartkids-weekly-plan",
+    "smartkids-meal-form-draft",
+    "smartkids-notifications",
+    "smartkids-guest-gens",
+    "smartkids-hydration-logs"
+  ];
+  keys.forEach(key => localStorage.removeItem(key));
+};
