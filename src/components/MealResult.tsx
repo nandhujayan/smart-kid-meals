@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { ChefHat, ShoppingBasket, ListChecks, Lightbulb, Bookmark, BookmarkCheck, ArrowLeft, Check } from "lucide-react";
+import { ChefHat, ShoppingBasket, ListChecks, Lightbulb, Bookmark, BookmarkCheck, ArrowLeft, Check, Clock, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Meal } from "@/lib/meal-data";
 import { saveMeal } from "@/lib/meal-data";
 import { toast } from "sonner";
+import GroceryListCard from "./GroceryListCard";
+import CookingMode from "./CookingMode";
 
 interface Props {
   meal: Meal;
@@ -13,6 +15,7 @@ interface Props {
 export default function MealResult({ meal, onBack }: Props) {
   const [saved, setSaved] = useState(false);
   const [checkedSteps, setCheckedSteps] = useState<Set<number>>(new Set());
+  const [cookingMode, setCookingMode] = useState(false);
 
   const handleSave = () => {
     saveMeal(meal);
@@ -28,9 +31,12 @@ export default function MealResult({ meal, onBack }: Props) {
     });
   };
 
+  if (cookingMode) {
+    return <CookingMode meal={meal} onClose={() => setCookingMode(false)} />;
+  }
+
   return (
     <div className="space-y-5">
-      {/* Back button */}
       <button onClick={onBack} className="flex items-center gap-1 text-sm font-bold text-muted-foreground hover:text-foreground transition-colors btn-press">
         <ArrowLeft size={18} /> Back
       </button>
@@ -42,9 +48,26 @@ export default function MealResult({ meal, onBack }: Props) {
         </div>
         <h2 className="text-xl font-extrabold text-foreground">{meal.name}</h2>
         <p className="mt-1 text-sm text-muted-foreground">{meal.description}</p>
-        <span className="mt-2 inline-block rounded-full bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
-          {meal.mealType}
-        </span>
+        <div className="mt-2 flex items-center justify-center gap-3">
+          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
+            {meal.mealType}
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs font-bold text-muted-foreground">
+            <Clock size={12} /> {meal.cookingTime}
+          </span>
+        </div>
+      </div>
+
+      {/* Cooking mode button */}
+      <div className="animate-slide-up-delay-1">
+        <Button
+          variant="generate"
+          size="lg"
+          className="w-full rounded-2xl"
+          onClick={() => setCookingMode(true)}
+        >
+          <Play size={20} /> Start Cooking Mode
+        </Button>
       </div>
 
       {/* Ingredients */}
@@ -82,6 +105,11 @@ export default function MealResult({ meal, onBack }: Props) {
           ))}
         </ol>
       </Section>
+
+      {/* Grocery list */}
+      <div className="animate-slide-up-delay-3">
+        <GroceryListCard groceryList={meal.groceryList} />
+      </div>
 
       {/* Tips */}
       <Section icon={<Lightbulb className="text-accent-foreground" size={22} />} title="Tips" delay="3">
