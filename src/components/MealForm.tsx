@@ -1,11 +1,14 @@
 import { useState } from "react";
-import { Baby, Leaf, AlertTriangle, Target, UtensilsCrossed, Sparkles } from "lucide-react";
+import { Baby, Leaf, AlertTriangle, Target, UtensilsCrossed, Sparkles, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { MealForm as MealFormType } from "@/lib/meal-data";
+import type { MealForm as MealFormType, ChildProfile } from "@/lib/meal-data";
 
 interface Props {
   onGenerate: (form: MealFormType) => void;
+  onGenerateWeekly: (form: MealFormType) => void;
   isLoading: boolean;
+  activeProfile: ChildProfile | null;
+  weeklyMode?: boolean;
 }
 
 const ageOptions = ["6-12 months", "1-2 years", "3-5 years", "6-10 years", "11+ years"];
@@ -53,17 +56,25 @@ function ChipSelect({ options, value, onChange }: { options: string[]; value: st
   );
 }
 
-export default function MealForm({ onGenerate, isLoading }: Props) {
+export default function MealForm({ onGenerate, onGenerateWeekly, isLoading, activeProfile, weeklyMode }: Props) {
   const [form, setForm] = useState<MealFormType>({
-    childAge: "3-5 years",
-    diet: "Regular",
-    allergies: "",
-    goal: "Balanced nutrition",
+    childAge: activeProfile?.age || "3-5 years",
+    diet: activeProfile?.diet || "Regular",
+    allergies: activeProfile?.allergies || "",
+    goal: activeProfile?.goal || "Balanced nutrition",
     mealType: "Breakfast",
   });
 
   const update = (key: keyof MealFormType, value: string) =>
     setForm(prev => ({ ...prev, [key]: value }));
+
+  const handleSubmit = () => {
+    if (weeklyMode) {
+      onGenerateWeekly(form);
+    } else {
+      onGenerate(form);
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -89,16 +100,18 @@ export default function MealForm({ onGenerate, isLoading }: Props) {
         <ChipSelect options={goalOptions} value={form.goal} onChange={v => update("goal", v)} />
       </FormField>
 
-      <FormField icon={<UtensilsCrossed className="text-peach" size={20} />} label="Meal Type" delay="3">
-        <ChipSelect options={mealTypes} value={form.mealType} onChange={v => update("mealType", v)} />
-      </FormField>
+      {!weeklyMode && (
+        <FormField icon={<UtensilsCrossed className="text-peach" size={20} />} label="Meal Type" delay="3">
+          <ChipSelect options={mealTypes} value={form.mealType} onChange={v => update("mealType", v)} />
+        </FormField>
+      )}
 
       <div className="animate-slide-up-delay-4 pt-2">
         <Button
           variant="generate"
           size="lg"
           className="w-full rounded-2xl"
-          onClick={() => onGenerate(form)}
+          onClick={handleSubmit}
           disabled={isLoading}
         >
           {isLoading ? (
@@ -106,6 +119,11 @@ export default function MealForm({ onGenerate, isLoading }: Props) {
               <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
               Generating...
             </span>
+          ) : weeklyMode ? (
+            <>
+              <Calendar size={22} />
+              Generate Weekly Plan
+            </>
           ) : (
             <>
               <Sparkles size={22} />
