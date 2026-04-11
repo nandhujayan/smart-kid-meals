@@ -4,6 +4,16 @@ export interface MealForm {
   allergies: string;
   goal: string;
   mealType: string;
+  availableIngredients?: string[];
+  onlyAvailable?: boolean;
+}
+
+export interface NutritionInfo {
+  calories: number;
+  protein: number;
+  carbs: number;
+  fats: number;
+  vitamins: string;
 }
 
 export interface GroceryList {
@@ -12,6 +22,10 @@ export interface GroceryList {
   grains: string[];
   proteins: string[];
   others: string[];
+}
+
+export interface GroceryAvailability {
+  [item: string]: boolean;
 }
 
 export interface Meal {
@@ -24,13 +38,17 @@ export interface Meal {
   tips: string[];
   mealType: string;
   groceryList: GroceryList;
+  nutrition: NutritionInfo;
   savedAt?: string;
+  childProfileName?: string;
 }
 
 export interface ChildProfile {
   id: string;
   name: string;
   age: string;
+  weight?: string;
+  height?: string;
   diet: string;
   allergies: string;
   goal: string;
@@ -57,6 +75,7 @@ const allMeals: Meal[] = [
     steps: ["Mash banana until smooth.", "Blend oats into flour or mix directly.", "Whisk in egg, milk, and cinnamon.", "Heat non-stick pan on medium-low with butter.", "Pour small circles, cook 2 min each side.", "Drizzle with honey and serve."],
     tips: ["Add blueberries for antioxidants.", "Freeze extras for busy mornings."],
     mealType: "breakfast",
+    nutrition: { calories: 280, protein: 9, carbs: 42, fats: 8, vitamins: "B6, Potassium, Fiber" },
     groceryList: { vegetables: [], dairy: ["Milk", "Butter"], grains: ["Rolled oats"], proteins: ["Eggs"], others: ["Banana", "Cinnamon", "Honey"] }
   },
   {
@@ -65,6 +84,7 @@ const allMeals: Meal[] = [
     steps: ["Preheat oven to 350°F.", "Whisk eggs and season.", "Stir in veggies and cheese.", "Pour into greased muffin tins.", "Bake 15-18 min until set.", "Cool slightly and serve."],
     tips: ["Makes 6 mini muffins — great for meal prep.", "Store in fridge up to 3 days."],
     mealType: "breakfast",
+    nutrition: { calories: 220, protein: 16, carbs: 4, fats: 15, vitamins: "A, C, D, Iron" },
     groceryList: { vegetables: ["Bell pepper", "Spinach"], dairy: ["Cheese"], grains: [], proteins: ["Eggs"], others: ["Salt", "Pepper"] }
   },
   {
@@ -73,6 +93,7 @@ const allMeals: Meal[] = [
     steps: ["Spoon yogurt into a bowl.", "Arrange berries on top.", "Sprinkle granola and chia seeds.", "Drizzle with honey.", "Serve immediately."],
     tips: ["Use frozen berries if fresh unavailable.", "Skip honey for babies under 1."],
     mealType: "breakfast",
+    nutrition: { calories: 310, protein: 18, carbs: 38, fats: 10, vitamins: "C, Calcium, Probiotics" },
     groceryList: { vegetables: [], dairy: ["Greek yogurt"], grains: ["Granola"], proteins: [], others: ["Mixed berries", "Honey", "Chia seeds"] }
   },
   {
@@ -81,6 +102,7 @@ const allMeals: Meal[] = [
     steps: ["Toast the bread lightly.", "Mash avocado with lemon and salt.", "Spread on toast.", "Cut into finger strips.", "Serve immediately."],
     tips: ["Add mashed egg on top for extra protein.", "Great first food for babies 6+ months."],
     mealType: "breakfast",
+    nutrition: { calories: 240, protein: 5, carbs: 22, fats: 16, vitamins: "E, K, Folate, Fiber" },
     groceryList: { vegetables: [], dairy: [], grains: ["Whole wheat bread"], proteins: [], others: ["Avocado", "Lemon", "Salt"] }
   },
   {
@@ -89,6 +111,7 @@ const allMeals: Meal[] = [
     steps: ["Spread cream cheese on tortillas.", "Layer chicken evenly.", "Add cucumber, carrot, avocado.", "Roll tightly and cut into pinwheels.", "Serve on a plate."],
     tips: ["Use rotisserie chicken for quick prep.", "Pack in lunchbox with ice pack."],
     mealType: "lunch",
+    nutrition: { calories: 350, protein: 22, carbs: 30, fats: 14, vitamins: "A, B12, Iron" },
     groceryList: { vegetables: ["Cucumber", "Carrot"], dairy: ["Cream cheese"], grains: ["Tortillas"], proteins: ["Chicken"], others: ["Avocado"] }
   },
   {
@@ -97,6 +120,7 @@ const allMeals: Meal[] = [
     steps: ["Cook pasta per package directions.", "Melt butter in saucepan.", "Stir in sweet potato and milk.", "Add cheese until smooth.", "Toss with pasta.", "Serve warm."],
     tips: ["Sneak in cauliflower puree for extra veggies.", "Use whole wheat pasta for fiber."],
     mealType: "lunch",
+    nutrition: { calories: 420, protein: 15, carbs: 52, fats: 18, vitamins: "A, Calcium, B6" },
     groceryList: { vegetables: ["Sweet potato"], dairy: ["Milk", "Cheddar cheese", "Butter"], grains: ["Elbow pasta"], proteins: [], others: [] }
   },
   {
@@ -105,6 +129,7 @@ const allMeals: Meal[] = [
     steps: ["Place tortilla in a dry pan on medium.", "Sprinkle cheese on one half.", "Add veggies and beans on cheese.", "Fold tortilla in half.", "Cook 2 min each side until golden.", "Cut into wedges and serve."],
     tips: ["Add a side of guacamole for healthy fats.", "Great for picky eaters who love cheese."],
     mealType: "lunch",
+    nutrition: { calories: 320, protein: 14, carbs: 36, fats: 13, vitamins: "C, Fiber, Iron" },
     groceryList: { vegetables: ["Bell pepper", "Corn"], dairy: ["Shredded cheese"], grains: ["Tortilla"], proteins: ["Black beans"], others: [] }
   },
   {
@@ -113,6 +138,7 @@ const allMeals: Meal[] = [
     steps: ["Heat soup in a saucepan.", "Butter bread and place cheese inside.", "Grill sandwich until golden.", "Cut into strips for dipping.", "Serve soup in a mug with dippers."],
     tips: ["Use low-sodium soup for toddlers.", "Add hidden veggies to the soup with an immersion blender."],
     mealType: "lunch",
+    nutrition: { calories: 290, protein: 10, carbs: 35, fats: 12, vitamins: "A, C, Lycopene" },
     groceryList: { vegetables: [], dairy: ["Cheese", "Butter"], grains: ["Bread"], proteins: [], others: ["Tomato soup", "Basil"] }
   },
   {
@@ -121,6 +147,7 @@ const allMeals: Meal[] = [
     steps: ["Steam broccoli 5 min.", "Bake salmon at 400°F for 12 min.", "Flake into bite-sized pieces.", "Arrange rice, broccoli, salmon in bowl.", "Drizzle soy sauce and sesame oil.", "Top with sesame seeds."],
     tips: ["Remove all bones for young children.", "Swap salmon for cod if preferred."],
     mealType: "dinner",
+    nutrition: { calories: 440, protein: 30, carbs: 38, fats: 18, vitamins: "D, Omega-3, B12" },
     groceryList: { vegetables: ["Broccoli"], dairy: [], grains: ["Rice"], proteins: ["Salmon fillet"], others: ["Soy sauce", "Sesame oil", "Sesame seeds"] }
   },
   {
@@ -129,6 +156,7 @@ const allMeals: Meal[] = [
     steps: ["Mix turkey, breadcrumbs, egg, herbs.", "Roll into small meatballs.", "Bake at 375°F for 15 min.", "Cook pasta.", "Warm tomato sauce.", "Combine and top with parmesan."],
     tips: ["Make meatballs tiny for toddlers.", "Add grated zucchini to meat mix."],
     mealType: "dinner",
+    nutrition: { calories: 480, protein: 28, carbs: 48, fats: 16, vitamins: "B6, Iron, Zinc" },
     groceryList: { vegetables: [], dairy: ["Parmesan"], grains: ["Pasta", "Breadcrumbs"], proteins: ["Ground turkey", "Eggs"], others: ["Tomato sauce", "Italian herbs"] }
   },
   {
@@ -137,6 +165,7 @@ const allMeals: Meal[] = [
     steps: ["Cook rice according to directions.", "Sauté chicken until cooked.", "Add vegetables and stir-fry 3 min.", "Add soy sauce and toss.", "Serve over rice."],
     tips: ["Cut veggies small for younger kids.", "Use tamari for gluten-free option."],
     mealType: "dinner",
+    nutrition: { calories: 380, protein: 26, carbs: 42, fats: 10, vitamins: "A, C, B6, Iron" },
     groceryList: { vegetables: ["Broccoli", "Carrot", "Snap peas"], dairy: [], grains: ["Rice"], proteins: ["Chicken breast"], others: ["Soy sauce"] }
   },
   {
@@ -145,6 +174,7 @@ const allMeals: Meal[] = [
     steps: ["Cut fish into strips.", "Set up breading station: flour, egg, breadcrumbs.", "Coat each strip.", "Place on lined baking sheet.", "Bake at 400°F for 15 min.", "Serve with lemon wedge."],
     tips: ["Serve with sweet potato fries.", "Great finger food for toddlers."],
     mealType: "dinner",
+    nutrition: { calories: 260, protein: 22, carbs: 18, fats: 8, vitamins: "D, B12, Phosphorus" },
     groceryList: { vegetables: [], dairy: [], grains: ["Breadcrumbs", "Flour"], proteins: ["White fish fillet", "Eggs"], others: ["Paprika", "Lemon"] }
   },
   {
@@ -153,6 +183,7 @@ const allMeals: Meal[] = [
     steps: ["Sauté onion until soft.", "Add carrot, potato, lentils.", "Pour in broth and bring to boil.", "Simmer 20 min until tender.", "Blend if desired for younger kids.", "Season with cumin and serve."],
     tips: ["Freeze portions for easy weeknight dinners.", "Great source of iron and protein."],
     mealType: "dinner",
+    nutrition: { calories: 320, protein: 18, carbs: 48, fats: 4, vitamins: "Iron, Folate, Fiber, B6" },
     groceryList: { vegetables: ["Carrot", "Potato", "Onion"], dairy: [], grains: ["Red lentils"], proteins: [], others: ["Broth", "Cumin"] }
   },
   {
@@ -161,6 +192,7 @@ const allMeals: Meal[] = [
     steps: ["Slice apple into wedges.", "Spread peanut butter on each.", "Sprinkle with granola and cinnamon.", "Serve on a plate."],
     tips: ["Use sunflower butter for nut allergies.", "Great after-school snack."],
     mealType: "snack",
+    nutrition: { calories: 250, protein: 7, carbs: 30, fats: 12, vitamins: "C, E, Fiber" },
     groceryList: { vegetables: [], dairy: [], grains: ["Granola"], proteins: ["Peanut butter"], others: ["Apple", "Cinnamon"] }
   },
   {
@@ -169,6 +201,7 @@ const allMeals: Meal[] = [
     steps: ["Line baking sheet with parchment.", "Spread yogurt into thin layer.", "Press berries and chips into yogurt.", "Drizzle with honey.", "Freeze 2+ hours.", "Break into pieces and serve."],
     tips: ["Store in freezer bag up to 2 weeks.", "Perfect for teething toddlers."],
     mealType: "snack",
+    nutrition: { calories: 270, protein: 14, carbs: 36, fats: 8, vitamins: "Calcium, Probiotics, C" },
     groceryList: { vegetables: [], dairy: ["Greek yogurt"], grains: [], proteins: [], others: ["Mixed berries", "Honey", "Chocolate chips"] }
   },
   {
@@ -177,6 +210,7 @@ const allMeals: Meal[] = [
     steps: ["Scoop hummus into a small bowl.", "Cut carrot and cucumber into sticks.", "Halve cherry tomatoes.", "Arrange veggies around hummus.", "Add breadsticks for dipping."],
     tips: ["Make hummus at home for less sodium.", "Kids love arranging their own plate."],
     mealType: "snack",
+    nutrition: { calories: 180, protein: 6, carbs: 24, fats: 7, vitamins: "A, C, Fiber, Iron" },
     groceryList: { vegetables: ["Carrot", "Cucumber", "Cherry tomatoes"], dairy: [], grains: ["Breadsticks"], proteins: ["Hummus"], others: [] }
   },
 ];
@@ -191,12 +225,26 @@ function pickRandom<T>(arr: T[], exclude: Set<string> = new Set(), getId: (item:
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
-export function generateMeal(form: MealForm): Meal {
+export function generateMeal(form: MealForm, excludeIds: string[] = []): Meal {
   const meals = getMealsByType(form.mealType);
   const fallback = getMealsByType("breakfast");
-  const pool = meals.length > 0 ? meals : fallback;
+  let pool = meals.length > 0 ? meals : fallback;
+  
+  if (excludeIds.length > 0) {
+    const filtered = pool.filter(m => !excludeIds.includes(m.id));
+    if (filtered.length > 0) pool = filtered;
+  }
+  
   const index = Math.floor(Math.random() * pool.length);
   return { ...pool[index], id: Date.now().toString() };
+}
+
+export function generateAlternatives(form: MealForm, currentId: string): Meal[] {
+  const meals = getMealsByType(form.mealType);
+  const fallback = getMealsByType("breakfast");
+  const pool = (meals.length > 0 ? meals : fallback).filter(m => m.id !== currentId);
+  const shuffled = [...pool].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, 2).map((m, i) => ({ ...m, id: `alt-${Date.now()}-${i}` }));
 }
 
 export function generateWeeklyPlan(form: MealForm): DayPlan[] {
@@ -264,11 +312,11 @@ export function getSavedMeals(): Meal[] {
   } catch { return []; }
 }
 
-export function saveMeal(meal: Meal): void {
+export function saveMeal(meal: Meal, profileName?: string): void {
   const meals = getSavedMeals();
   const exists = meals.some(m => m.name === meal.name && m.savedAt === meal.savedAt);
   if (!exists) {
-    meals.unshift({ ...meal, savedAt: new Date().toLocaleDateString() });
+    meals.unshift({ ...meal, savedAt: new Date().toLocaleDateString(), childProfileName: profileName });
     localStorage.setItem("smartkids-saved-meals", JSON.stringify(meals));
   }
 }
