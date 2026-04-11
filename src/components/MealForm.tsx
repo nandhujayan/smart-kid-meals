@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Baby, Leaf, AlertTriangle, Target, UtensilsCrossed, Sparkles, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import IngredientInput from "@/components/IngredientInput";
 import type { MealForm as MealFormType, ChildProfile } from "@/lib/meal-data";
 
 interface Props {
@@ -63,6 +64,8 @@ export default function MealForm({ onGenerate, onGenerateWeekly, isLoading, acti
     allergies: activeProfile?.allergies || "",
     goal: activeProfile?.goal || "Balanced nutrition",
     mealType: "Breakfast",
+    availableIngredients: [],
+    onlyAvailable: false,
   });
 
   const update = (key: keyof MealFormType, value: string) =>
@@ -105,6 +108,16 @@ export default function MealForm({ onGenerate, onGenerateWeekly, isLoading, acti
           <ChipSelect options={mealTypes} value={form.mealType} onChange={v => update("mealType", v)} />
         </FormField>
       )}
+
+      {/* Ingredient Input */}
+      <div className="animate-slide-up-delay-3">
+        <IngredientInput
+          ingredients={form.availableIngredients || []}
+          onlyAvailable={form.onlyAvailable || false}
+          onIngredientsChange={items => setForm(prev => ({ ...prev, availableIngredients: items }))}
+          onToggleOnly={val => setForm(prev => ({ ...prev, onlyAvailable: val }))}
+        />
+      </div>
 
       <div className="animate-slide-up-delay-4 pt-2">
         <Button

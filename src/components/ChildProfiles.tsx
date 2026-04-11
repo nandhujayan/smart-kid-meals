@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { UserPlus, Users, Trash2, Edit2, Check, X, Baby } from "lucide-react";
+import { UserPlus, Users, Trash2, Edit2, Check, X, Baby, Scale, Ruler } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getChildProfiles, saveChildProfile, removeChildProfile, type ChildProfile } from "@/lib/meal-data";
 import { toast } from "sonner";
@@ -9,14 +9,41 @@ interface Props {
   onSelect: (profile: ChildProfile) => void;
 }
 
+const ageOptions = ["6-12 months", "1-2 years", "3-5 years", "6-10 years", "11+ years"];
+const dietOptions = ["Regular", "Vegetarian", "Vegan", "Halal", "Gluten-Free"];
+const goalOptions = ["Balanced nutrition", "Weight gain", "Picky eater friendly", "Brain boost", "Energy boost"];
+
 const emptyProfile = (): ChildProfile => ({
   id: Date.now().toString(),
   name: "",
   age: "3-5 years",
+  weight: "",
+  height: "",
   diet: "Regular",
   allergies: "",
   goal: "Balanced nutrition",
 });
+
+function ChipSelect({ options, value, onChange, small }: { options: string[]; value: string; onChange: (v: string) => void; small?: boolean }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {options.map(opt => (
+        <button
+          key={opt}
+          type="button"
+          onClick={() => onChange(opt)}
+          className={`rounded-lg px-3 py-1.5 font-semibold transition-all btn-press ${small ? "text-xs" : "text-xs"} ${
+            value === opt
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "bg-muted text-muted-foreground"
+          }`}
+        >
+          {opt}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export default function ChildProfiles({ activeProfileId, onSelect }: Props) {
   const [profiles, setProfiles] = useState<ChildProfile[]>(getChildProfiles());
@@ -66,6 +93,59 @@ export default function ChildProfiles({ activeProfileId, onSelect }: Props) {
             className="w-full rounded-xl border-2 border-input bg-background px-4 py-2.5 text-sm font-semibold placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
             autoFocus
           />
+
+          <div className="space-y-2">
+            <label className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
+              <Baby size={14} /> Age
+            </label>
+            <ChipSelect options={ageOptions} value={editing.age} onChange={v => setEditing({ ...editing, age: v })} small />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground mb-1">
+                <Scale size={14} /> Weight (kg)
+              </label>
+              <input
+                type="text"
+                placeholder="Optional"
+                value={editing.weight || ""}
+                onChange={e => setEditing({ ...editing, weight: e.target.value })}
+                className="w-full rounded-xl border-2 border-input bg-background px-3 py-2 text-sm font-medium placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground mb-1">
+                <Ruler size={14} /> Height (cm)
+              </label>
+              <input
+                type="text"
+                placeholder="Optional"
+                value={editing.height || ""}
+                onChange={e => setEditing({ ...editing, height: e.target.value })}
+                className="w-full rounded-xl border-2 border-input bg-background px-3 py-2 text-sm font-medium placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-muted-foreground">Diet Preference</label>
+            <ChipSelect options={dietOptions} value={editing.diet} onChange={v => setEditing({ ...editing, diet: v })} small />
+          </div>
+
+          <input
+            type="text"
+            placeholder="Allergies (e.g. nuts, dairy)"
+            value={editing.allergies}
+            onChange={e => setEditing({ ...editing, allergies: e.target.value })}
+            className="w-full rounded-xl border-2 border-input bg-background px-3 py-2 text-sm font-medium placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
+          />
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-muted-foreground">Health Goal</label>
+            <ChipSelect options={goalOptions} value={editing.goal} onChange={v => setEditing({ ...editing, goal: v })} small />
+          </div>
+
           <div className="flex gap-2">
             <Button variant="generate" size="sm" className="flex-1 rounded-xl" onClick={handleSave}>
               <Check size={16} /> Save
@@ -94,14 +174,17 @@ export default function ChildProfiles({ activeProfileId, onSelect }: Props) {
             activeProfileId === profile.id ? "bg-peach-light border-primary/30 shadow-md" : "bg-card border-border hover:shadow-sm"
           }`}
         >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-lavender">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-lavender">
             <span className="text-sm font-extrabold text-lavender-foreground">
               {profile.name.charAt(0).toUpperCase()}
             </span>
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-bold text-foreground">{profile.name}</p>
-            <p className="text-xs text-muted-foreground">{profile.age} · {profile.diet}</p>
+            <p className="text-xs text-muted-foreground">
+              {profile.age} · {profile.diet}
+              {profile.weight ? ` · ${profile.weight}kg` : ""}
+            </p>
           </div>
           <div className="flex shrink-0 gap-1">
             <button
