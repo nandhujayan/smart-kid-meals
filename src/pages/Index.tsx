@@ -23,9 +23,11 @@ export default function Index() {
   const [isLoading, setIsLoading] = useState(false);
   const [activeProfile, setActiveProfile] = useState<ChildProfile | null>(null);
   const [notifications, setNotifications] = useState(getNotificationSetting());
+  const [lastForm, setLastForm] = useState<MealFormType | null>(null);
 
   const handleGenerate = (form: MealFormType) => {
     setIsLoading(true);
+    setLastForm(form);
     setTimeout(() => {
       const result = generateMeal(form);
       setMeal(result);
@@ -36,6 +38,7 @@ export default function Index() {
 
   const handleGenerateWeekly = (form: MealFormType) => {
     setIsLoading(true);
+    setLastForm(form);
     setTimeout(() => {
       const plan = generateWeeklyPlan(form);
       setWeeklyPlan(plan);
@@ -47,6 +50,7 @@ export default function Index() {
   const handleBack = () => setView("tabs");
   const handleSelectSaved = (m: Meal) => { setMeal(m); setView("result"); };
   const handleWeeklyMealView = (m: Meal) => { setMeal(m); setView("result"); };
+  const handleViewMeal = (m: Meal) => { setMeal(m); };
 
   const handleToggleNotifications = () => {
     const next = !notifications;
@@ -99,7 +103,13 @@ export default function Index() {
       {/* Content */}
       <main className="flex-1 px-5 pb-8 pt-2">
         {view === "result" && meal ? (
-          <MealResult meal={meal} onBack={handleBack} />
+          <MealResult
+            meal={meal}
+            onBack={handleBack}
+            lastForm={lastForm}
+            activeProfileName={activeProfile?.name}
+            onViewMeal={handleViewMeal}
+          />
         ) : view === "weekly-view" && weeklyPlan ? (
           <WeeklyPlanner plan={weeklyPlan} onViewMeal={handleWeeklyMealView} onBack={handleBack} />
         ) : tab === "generate" ? (

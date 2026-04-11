@@ -1,24 +1,30 @@
 import { useState } from "react";
-import { ChefHat, ShoppingBasket, ListChecks, Lightbulb, Bookmark, BookmarkCheck, ArrowLeft, Check, Clock, Play } from "lucide-react";
+import { ChefHat, ShoppingBasket, ListChecks, Lightbulb, Bookmark, BookmarkCheck, ArrowLeft, Check, Clock, Play, RefreshCw, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { Meal } from "@/lib/meal-data";
-import { saveMeal } from "@/lib/meal-data";
+import type { Meal, MealForm as MealFormType } from "@/lib/meal-data";
+import { saveMeal, generateMeal, generateAlternatives } from "@/lib/meal-data";
 import { toast } from "sonner";
 import GroceryListCard from "./GroceryListCard";
 import CookingMode from "./CookingMode";
+import NutritionCard from "./NutritionCard";
 
 interface Props {
   meal: Meal;
   onBack: () => void;
+  lastForm?: MealFormType | null;
+  activeProfileName?: string;
+  onViewMeal?: (meal: Meal) => void;
 }
 
-export default function MealResult({ meal, onBack }: Props) {
+export default function MealResult({ meal, onBack, lastForm, activeProfileName, onViewMeal }: Props) {
   const [saved, setSaved] = useState(false);
   const [checkedSteps, setCheckedSteps] = useState<Set<number>>(new Set());
   const [cookingMode, setCookingMode] = useState(false);
+  const [alternatives, setAlternatives] = useState<Meal[]>([]);
+  const [isRegenerating, setIsRegenerating] = useState(false);
 
   const handleSave = () => {
-    saveMeal(meal);
+    saveMeal(meal, activeProfileName);
     setSaved(true);
     toast.success("Meal saved! 🎉");
   };
@@ -29,6 +35,22 @@ export default function MealResult({ meal, onBack }: Props) {
       if (next.has(i)) next.delete(i); else next.add(i);
       return next;
     });
+  };
+
+  const handleRegenerate = () => {
+    if (!lastForm || !onViewMeal) return;
+    setIsRegenerating(true);
+    setTimeout(() => {
+      const newMeal = generateMeal(lastForm, [meal.id]);
+      onViewMeal(newMeal);
+      setIsRegenerating(false);
+    }, 800);
+  };
+
+  const handleShowAlternatives = () => {
+    if (!lastForm) return;
+    const alts = generateAlternatives(lastForm, meal.id);
+    setAlternatives(alts);
   };
 
   if (cookingMode) {
@@ -58,6 +80,60 @@ export default function MealResult({ meal, onBack }: Props) {
         </div>
       </div>
 
+      {/* Regenerate & alternatives */}
+      {lastForm && onViewMeal && (
+        <div className="animate-slide-up-delay-1 flex gap-2">
+          <Button
+            variant="outline"
+            size="lg"
+            className="flex-1 rounded-2xl border-2"
+            onClick={handleRegenerate}
+            disabled={isRegenerating}
+          >
+            {isRegenerating ? (
+              <span className="flex items-center gap-2">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                Generating...
+              </span>
+            ) : (
+              <>
+                <RefreshCw size={18} /> Suggest Another
+              </>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="lg"
+            className="flex-1 rounded-2xl border-2"
+            onClick={handleShowAlternatives}
+          >
+            <Zap size={18} /> Quick Alternatives
+          </Button>
+        </div>
+      )}
+
+      {/* Alternative cards */}
+      {alternatives.length > 0 && (
+        <div className="animate-slide-up space-y-2">
+          <p className="text-xs font-bold text-muted-foreground">⚡ Quick Alternatives</p>
+          {alternatives.map(alt => (
+            <div
+              key={alt.id}
+              onClick={() => onViewMeal?.(alt)}
+              className="flex cursor-pointer items-center gap-3 rounded-xl bg-card p-3 border border-border hover:shadow-md transition-all btn-press"
+            >
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky">
+                <ChefHat className="text-sky-foreground" size={16} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold text-foreground">{alt.name}</p>
+                <p className="text-xs text-muted-foreground">{alt.cookingTime} · {alt.nutrition.calories} kcal</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Cooking mode button */}
       <div className="animate-slide-up-delay-1">
         <Button
@@ -70,8 +146,13 @@ export default function MealResult({ meal, onBack }: Props) {
         </Button>
       </div>
 
+      {/* Nutrition */}
+      <div className="animate-slide-up-delay-1">
+        <NutritionCard nutrition={meal.nutrition} />
+      </div>
+
       {/* Ingredients */}
-      <Section icon={<ShoppingBasket className="text-sage" size={22} />} title="Ingredients" delay="1">
+      <Section icon={<ShoppingBasket className="text-sage" size={22} />} title="Ingredients" delay="2">
         <ul className="space-y-2">
           {meal.ingredients.map((item, i) => (
             <li key={i} className="flex items-start gap-2 text-sm">
