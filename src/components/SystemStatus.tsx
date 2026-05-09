@@ -26,7 +26,7 @@ export default function SystemStatus() {
   };
 
   return (
-    <div className="animate-slide-up rounded-2xl bg-card p-5 border border-border shadow-sm">
+    <div className="animate-slide-up rounded-2xl bg-card p-5 shadow-sm">
       <div className="flex items-center justify-between mb-4">
         <h3 className="flex items-center gap-2 font-black text-sm uppercase tracking-wider text-muted-foreground">
           <Zap size={16} className="text-sky" /> System Health Check
@@ -51,10 +51,10 @@ export default function SystemStatus() {
           </p>
         </div>
       ) : (
-        <div className={`p-4 rounded-xl border-2 transition-all ${
+        <div className={`p-4 rounded-xl shadow-inner transition-all ${
           result.status === "success" 
-            ? "bg-sage/5 border-sage/20 text-sage-foreground" 
-            : "bg-destructive/5 border-destructive/20 text-destructive-foreground"
+            ? "bg-sage/10 text-sage-foreground" 
+            : "bg-destructive/10 text-destructive-foreground"
         }`}>
           <div className="flex items-start gap-3">
             {result.status === "success" ? (

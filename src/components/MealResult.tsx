@@ -19,7 +19,6 @@ interface Props {
 }
 
 export default function MealResult({ meal, onBack, lastForm, activeProfileName, onViewMeal, setIsLoading, onAuthRequired }: Props) {
-  console.log("MealResult rendering with meal:", meal);
   const [saved, setSaved] = useState(false);
   const [checkedSteps, setCheckedSteps] = useState<Set<number>>(new Set());
   const [cookingMode, setCookingMode] = useState(false);
@@ -70,8 +69,8 @@ export default function MealResult({ meal, onBack, lastForm, activeProfileName, 
     setIsLoading?.(true);
     setIsRegenerating(true);
     try {
-      // Modify form for specific meal name
-      const specificForm = { ...lastForm, mealType: altName as any }; 
+      // Pass altName as a preferred meal name hint, keeping mealType intact
+      const specificForm = { ...lastForm, preferredMealName: altName };
       const newMeal = await generateMeal(specificForm, [meal.id]);
       onViewMeal(newMeal);
       setShowAlts(false);
@@ -101,7 +100,7 @@ export default function MealResult({ meal, onBack, lastForm, activeProfileName, 
       </div>
 
       {/* Meal name card */}
-      <div className="animate-slide-up rounded-3xl bg-peach-light p-6 text-center shadow-sm border-2 border-peach/10">
+      <div className="animate-slide-up rounded-3xl bg-peach-light p-6 text-center shadow-md">
         <div className="mb-3 flex justify-center">
           <ChefHat className="text-peach" size={42} />
         </div>
@@ -116,9 +115,18 @@ export default function MealResult({ meal, onBack, lastForm, activeProfileName, 
           <span className="inline-flex items-center gap-1 rounded-full bg-sky/10 px-4 py-1.5 text-xs font-bold text-sky-foreground">
             {meal.difficulty}
           </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-4 py-1.5 text-xs font-bold text-muted-foreground border border-border/50">
+          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-4 py-1.5 text-xs font-bold text-muted-foreground">
             <Clock size={12} /> {meal.cookingTime}
           </span>
+          {meal.costRank && (
+            <span className={`inline-flex items-center gap-1 rounded-full px-4 py-1.5 text-xs font-black shadow-sm ${
+              meal.costRank === 'Budget' ? 'bg-emerald-100 text-emerald-700' :
+              meal.costRank === 'Premium' ? 'bg-amber-100 text-amber-700' :
+              'bg-blue-100 text-blue-700'
+            }`}>
+              {meal.costRank === 'Budget' ? '$' : meal.costRank === 'Premium' ? '$$$' : '$$'} {meal.costRank}
+            </span>
+          )}
         </div>
       </div>
 
@@ -128,7 +136,7 @@ export default function MealResult({ meal, onBack, lastForm, activeProfileName, 
           <div className="animate-slide-up-delay-1 grid grid-cols-2 gap-3">
             <Button
               variant="outline"
-              className="h-auto py-4 rounded-3xl border-2 flex flex-col items-center gap-1 hover:bg-muted/50 transition-all font-extrabold text-foreground"
+              className="h-auto py-4 rounded-3xl border-none shadow-sm flex flex-col items-center gap-1 hover:bg-muted/50 transition-all font-extrabold text-foreground"
               onClick={handleRegenerate}
               disabled={isRegenerating}
             >
@@ -137,7 +145,7 @@ export default function MealResult({ meal, onBack, lastForm, activeProfileName, 
             </Button>
             <Button
               variant={showAlts ? "secondary" : "outline"}
-              className={`h-auto py-4 rounded-3xl border-2 flex flex-col items-center gap-1 transition-all font-extrabold text-foreground ${showAlts ? 'border-primary bg-primary/5' : ''}`}
+              className={`h-auto py-4 rounded-3xl border-none shadow-sm flex flex-col items-center gap-1 transition-all font-extrabold text-foreground ${showAlts ? 'bg-primary/20 text-primary' : ''}`}
               onClick={handleShowAlternatives}
             >
               <Zap className={`h-5 w-5 ${showAlts ? "text-primary fill-primary/20" : ""}`} />
@@ -148,17 +156,17 @@ export default function MealResult({ meal, onBack, lastForm, activeProfileName, 
 
         {/* Alternative cards */}
         {showAlts && (
-          <div className="animate-slide-up space-y-4 rounded-3xl bg-muted/20 p-5 border border-dashed border-border/60">
+          <div className="animate-slide-up space-y-4 rounded-3xl bg-muted/30 p-5">
             <div className="flex items-center gap-2">
               <Zap size={14} className="text-primary" />
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/80">Try Something Else</p>
             </div>
             <div className="grid gap-3">
-              {(alternatives.length > 0 ? alternatives : meal.alternatives || []).map((alt, i) => (
+              {(alternatives || []).map((alt, i) => (
                 <div
                   key={i}
                   onClick={() => handleSelectAlternative(alt.mealName)}
-                  className="flex items-center gap-4 rounded-2xl bg-card p-4 border border-border shadow-sm hover:shadow-md hover:border-primary/30 transition-all group cursor-pointer btn-press"
+                  className="flex items-center gap-4 rounded-2xl bg-card p-4 shadow-sm hover:shadow-md transition-all group cursor-pointer btn-press"
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky/10 group-hover:bg-sky/20 transition-colors">
                     <ChefHat className="text-sky" size={20} />
@@ -184,28 +192,48 @@ export default function MealResult({ meal, onBack, lastForm, activeProfileName, 
 
           <Section icon={<ShoppingBasket className="text-sage" size={22} />} title="Ingredients" delay="2">
             <ul className="space-y-3">
-              {(meal.ingredients || []).map((item, i) => (
-                <li key={i} className="flex items-start gap-3 text-sm">
-                  <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-sage" />
-                  <div className="flex flex-col">
-                    <span className="font-extrabold text-sage-foreground leading-none mb-0.5">{item.quantity}</span>
-                    <span className="text-foreground/90 font-medium">{item.name}</span>
-                  </div>
-                </li>
-              ))}
+              {(meal.ingredients || []).map((item, i) => {
+                const isString = typeof item === 'string';
+                const name = isString ? item : item.name;
+                const quantity = isString ? '' : item.quantity;
+                
+                if (!name && !quantity) return null; // Skip truly empty items
+                
+                return (
+                  <li key={i} className="flex items-start gap-3 text-sm">
+                    <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-sage" />
+                    <div className="flex flex-col">
+                      {quantity && <span className="font-extrabold text-sage-foreground leading-none mb-0.5">{quantity}</span>}
+                      <span className="text-foreground/90 font-medium">{name}</span>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </Section>
 
           <Section icon={<Lightbulb className="text-accent-foreground" size={22} />} title="Cooking Tips" delay="3">
             <ul className="space-y-3">
-              {meal.tips.map((tip, i) => (
-                <li key={i} className="flex items-start gap-3 text-sm bg-accent/20 p-3 rounded-xl border border-accent/20 leading-relaxed font-semibold text-accent-foreground">
+              {(meal.tips || []).map((tip, i) => (
+                <li key={i} className="flex items-start gap-3 text-sm bg-accent/20 p-3 rounded-xl leading-relaxed font-semibold text-accent-foreground">
                   <span className="shrink-0">💡</span>
                   {tip}
                 </li>
               ))}
             </ul>
           </Section>
+
+          {meal.insight && (
+            <div className="animate-slide-up-delay-3 rounded-2xl bg-primary/5 border border-primary/10 p-5 mt-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="text-primary" size={20} />
+                <h4 className="text-sm font-black uppercase tracking-wider text-primary">Smart Insight</h4>
+              </div>
+              <p className="text-sm font-bold text-foreground/80 leading-relaxed italic">
+                "{meal.insight}"
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Right Column */}
@@ -221,16 +249,33 @@ export default function MealResult({ meal, onBack, lastForm, activeProfileName, 
             </Button>
           </div>
 
+          {meal.kidActivity && (
+            <div className="animate-slide-up-delay-1 overflow-hidden rounded-2xl border-2 border-dashed border-peach/30 bg-peach-light/30 p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="bg-peach rounded-lg p-2 text-white">
+                  <ChefHat size={20} />
+                </div>
+                <div>
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-peach/80">Mini Chef Opportunity</h4>
+                  <p className="text-sm font-extrabold text-foreground">Let's Cook Together!</p>
+                </div>
+              </div>
+              <p className="text-[13px] font-semibold text-foreground/70 leading-relaxed bg-white/50 p-3 rounded-xl border border-peach/10">
+                <strong className="text-peach">Your child can:</strong> {meal.kidActivity}
+              </p>
+            </div>
+          )}
+
           <Section icon={<ListChecks className="text-sky-foreground" size={22} />} title="Step-by-Step Guide" delay="2">
             <ol className="space-y-3">
               {(meal.steps || []).map((step, i) => (
                 <li
                   key={i}
                   onClick={() => toggleStep(i)}
-                  className={`flex cursor-pointer items-start gap-3 rounded-2xl p-4 transition-all btn-press border-2 ${
+                  className={`flex cursor-pointer items-start gap-3 rounded-2xl p-4 transition-all btn-press ${
                     checkedSteps.has(i) 
-                      ? "bg-secondary/30 border-secondary/50" 
-                      : "bg-muted/40 border-transparent hover:border-muted-foreground/20"
+                      ? "bg-secondary/40 shadow-sm" 
+                      : "bg-muted/40 hover:bg-muted/60"
                   }`}
                 >
                   <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black transition-all ${
@@ -274,7 +319,7 @@ export default function MealResult({ meal, onBack, lastForm, activeProfileName, 
 
 function Section({ icon, title, delay, children }: { icon: React.ReactNode; title: string; delay: string; children: React.ReactNode }) {
   return (
-    <div className={`animate-slide-up-delay-${delay} rounded-2xl bg-card p-4 shadow-sm border border-border`}>
+    <div className={`animate-slide-up-delay-${delay} rounded-2xl bg-card p-4 shadow-sm`}>
       <h3 className="mb-3 flex items-center gap-2 font-extrabold text-foreground">
         {icon} {title}
       </h3>

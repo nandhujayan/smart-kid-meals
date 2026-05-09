@@ -85,6 +85,16 @@ export default {
         xl: "calc(var(--radius) + 4px)",
         "2xl": "calc(var(--radius) + 8px)",
       },
+      boxShadow: {
+        clay: "8px 8px 16px rgba(0, 0, 0, 0.08), inset -4px -4px 8px rgba(0, 0, 0, 0.08), inset 4px 4px 8px rgba(255, 255, 255, 0.6)",
+        "clay-dark": "8px 8px 16px rgba(0, 0, 0, 0.15), inset -4px -4px 8px rgba(0, 0, 0, 0.15), inset 4px 4px 8px rgba(255, 255, 255, 0.3)",
+        "soft-3d": "0px 18px 50px rgba(0, 0, 0, 0.25), 0px 8px 20px rgba(0, 0, 0, 0.12)",
+        sm: "0px 2px 4px rgba(0, 0, 0, 0.05)",
+        md: "0px 8px 24px rgba(0, 0, 0, 0.1)",
+        lg: "0px 12px 32px rgba(0, 0, 0, 0.15)",
+        xl: "0px 18px 50px rgba(0, 0, 0, 0.25), 0px 8px 20px rgba(0, 0, 0, 0.12)",
+        "2xl": "0px 24px 60px rgba(0, 0, 0, 0.3)",
+      },
       keyframes: {
         "accordion-down": {
           from: { height: "0" },

@@ -164,6 +164,8 @@ export default function MealForm({ onGenerate, onGenerateWeekly, isLoading, acti
         <ChipSelect options={ageOptions} value={form.childAge} onChange={v => update("childAge", v)} />
       </FormField>
 
+      <div className="h-px bg-muted-foreground/10 w-full animate-slide-up border-t-2 border-dashed border-muted-foreground/20 my-2" />
+
       <FormField icon={<Leaf className="text-sage" size={20} />} label="Diet Preference" delay="1">
         <ChipSelect options={dietOptions} value={form.diet} onChange={v => update("diet", v)} />
         {dietConflicts.length > 0 && (
@@ -173,6 +175,8 @@ export default function MealForm({ onGenerate, onGenerateWeekly, isLoading, acti
           </p>
         )}
       </FormField>
+
+      <div className="h-px bg-muted-foreground/10 w-full animate-slide-up border-t-2 border-dashed border-muted-foreground/20 my-2" />
 
       <TagInput
         items={form.allergies || []}
@@ -198,9 +202,13 @@ export default function MealForm({ onGenerate, onGenerateWeekly, isLoading, acti
         </p>
       )}
 
+      <div className="h-px bg-muted-foreground/10 w-full animate-slide-up border-t-2 border-dashed border-muted-foreground/20 my-2" />
+
       <FormField icon={<Target className="text-lavender-foreground" size={20} />} label="Nutrition Goal" delay="3">
         <ChipSelect options={goalOptions} value={form.goal} onChange={v => update("goal", v)} />
       </FormField>
+
+      <div className="h-px bg-muted-foreground/10 w-full animate-slide-up border-t-2 border-dashed border-muted-foreground/20 my-2" />
 
       {!weeklyMode && (
         <FormField icon={<UtensilsCrossed className="text-peach" size={20} />} label="Meal Type" delay="3">
@@ -211,6 +219,8 @@ export default function MealForm({ onGenerate, onGenerateWeekly, isLoading, acti
       <FormField icon={<Sparkles className="text-sky" size={20} />} label="Cuisine Style" delay="3">
         <ChipSelect options={cuisineOptions} value={form.cuisine || "Global"} onChange={v => update("cuisine", v)} />
       </FormField>
+
+      <div className="h-px bg-muted/50 w-full animate-slide-up" />
 
       <TagInput
         items={form.availableIngredients || []}

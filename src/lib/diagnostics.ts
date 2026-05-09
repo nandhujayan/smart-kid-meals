@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { supabase } from "./supabase";
 
 export interface DiagnosticResult {
   hasKey: boolean;
@@ -8,38 +8,39 @@ export interface DiagnosticResult {
 }
 
 export const checkGeminiKey = (): boolean => {
-  return !!import.meta.env.VITE_GEMINI_API_KEY;
+  return true; // We now use Edge Functions, API key is server-side
 };
 
 export const runFullDiagnostic = async (): Promise<DiagnosticResult> => {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-
-  if (!apiKey) {
-    return {
-      hasKey: false,
-      status: "error",
-      message: "VITE_GEMINI_API_KEY is missing from environment variables.",
-      details: "Ensure it is added to your Vercel project settings and starts with 'VITE_' prefix."
-    };
-  }
-
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel(
-      { model: "gemini-1.5-flash" },
-      { apiVersion: "v1" }
-    );
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
     
-    const result = await model.generateContent("Hello. Reply with 'OK' if you are working.");
-    const response = await result.response;
-    const text = response.text();
+    if (!token) {
+      return {
+        hasKey: false,
+        status: "error",
+        message: "Missing Supabase configuration",
+        details: "VITE_SUPABASE_PUBLISHABLE_KEY is not set in environment variables."
+      };
+    }
 
-    if (text.includes("OK") || text.length > 0) {
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-meal-v2`;
+    
+    // We send an OPTIONS request as a simple ping to the Edge Function to verify it's reachable
+    const res = await fetch(url, {
+      method: "OPTIONS",
+      headers: {
+        "Authorization": `Bearer ${token}`
+      }
+    });
+
+    if (res.ok) {
       return {
         hasKey: true,
         status: "success",
-        message: "Gemini API Connection Successful!",
-        details: `Received response: "${text.substring(0, 50)}..."`
+        message: "AI Edge Function Connection Successful!",
+        details: `Connected to Supabase Edge Function with status: ${res.status}`
       };
     }
 
@@ -47,27 +48,16 @@ export const runFullDiagnostic = async (): Promise<DiagnosticResult> => {
       hasKey: true,
       status: "error",
       message: "Connected but received an unexpected response.",
-      details: text
+      details: `Status code: ${res.status}`
     };
   } catch (error: any) {
     console.error("Diagnostic Error:", error);
     
-    let message = "API Connection Failed";
-    let details = error.message || "Unknown error occurred";
-
-    if (error.message?.includes("API_KEY_INVALID")) {
-      message = "Invalid API Key";
-      details = "The key provided was rejected by Google. Check for typos or if the key is active.";
-    } else if (error.message?.includes("User location is not supported")) {
-      message = "Region Blocked";
-      details = "Gemini API is currently not available in your deployment region or user's location.";
-    }
-
     return {
       hasKey: true,
       status: "error",
-      message,
-      details
+      message: "API Connection Failed",
+      details: error.message || "Unknown error occurred"
     };
   }
 };

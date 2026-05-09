@@ -1,0 +1,68 @@
+{
+  "expo": {
+    "name": "Smart Kid Meals",
+    "slug": "smart-meals-kids",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "smartkidmeals",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#10b981"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.smartkidmeals.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Smart Kid Meals uses the camera to scan and identify meals for nutrition tracking."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#10b981"
+      },
+      "package": "com.smartkidmeals.app",
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "smartkidmeals"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "814d100e-cb00-4667-af0d-6a4993b51b1c"
+      }
+    },
+    "owner": "nandhujayan619s-organization"
+  }
+}

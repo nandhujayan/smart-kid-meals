@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Apple, Milk, Banana, Zap, Clock, Sparkles, ChefHat, Info, ChevronRight, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { generateDrink, type Drink, type ChildProfile } from "@/lib/meal-data";
+import { generateDrink, getPredefinedDrinks, type Drink, type ChildProfile } from "@/lib/meal-data";
 import { toast } from "sonner";
 
 interface Props {
@@ -19,6 +19,8 @@ export default function LiquidNutrition({ activeProfile }: Props) {
   const [selectedCategory, setSelectedCategory] = useState("Smoothie");
   const [drink, setDrink] = useState<Drink | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  const predefinedDrinks = getPredefinedDrinks(selectedCategory);
 
   const handleGenerate = async () => {
     if (!activeProfile) {
@@ -53,7 +55,7 @@ export default function LiquidNutrition({ activeProfile }: Props) {
             onClick={() => setSelectedCategory(cat.id)}
             className={`flex flex-col items-center gap-2 rounded-2xl p-4 transition-all btn-press ${
               selectedCategory === cat.id
-                ? `${cat.color} ring-2 ring-inset ring-current shadow-md scale-105`
+                ? `${cat.color} shadow-md scale-105`
                 : "bg-muted/50 text-muted-foreground hover:bg-muted"
             }`}
           >
@@ -66,21 +68,51 @@ export default function LiquidNutrition({ activeProfile }: Props) {
       </div>
 
       {!drink && !isLoading ? (
-        <div className="flex flex-col items-center justify-center p-8 text-center space-y-6 bg-muted/20 rounded-[2.5rem] border-2 border-dashed border-muted">
-          <div className="h-24 w-24 rounded-full bg-primary/10 flex items-center justify-center animate-bounce">
-            {categories.find(c => c.id === selectedCategory)?.icon}
+        <div className="space-y-8 animate-in fade-in duration-500">
+          <div className="flex flex-col items-center justify-center p-6 text-center space-y-4 bg-muted/20 rounded-[2rem]">
+            <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
+              {categories.find(c => c.id === selectedCategory)?.icon}
+            </div>
+            <div className="max-w-xs">
+              <h4 className="text-lg font-black">{selectedCategory} Classics</h4>
+              <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                Choose a proven favorite or create a custom one with our AI Nutritionist!
+              </p>
+            </div>
           </div>
-          <div className="max-w-xs space-y-2">
-            <h4 className="text-lg font-black">{selectedCategory} Expert</h4>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              I'll help you create a nutritious drink designed specifically for {activeProfile?.name || "your child"}'s growth and energy needs.
-            </p>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {predefinedDrinks.map((preDrink) => (
+              <button
+                key={preDrink.id}
+                onClick={() => setDrink(preDrink)}
+                className="flex items-center gap-4 p-4 rounded-2xl bg-card border shadow-sm hover:shadow-md transition-all text-left group"
+              >
+                <div className="h-12 w-12 rounded-xl bg-muted/50 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  {categories.find(c => c.id === selectedCategory)?.icon}
+                </div>
+                <div className="flex-1">
+                  <h5 className="text-sm font-bold text-foreground group-hover:text-primary transition-colors">{preDrink.drinkName}</h5>
+                  <p className="text-[10px] font-semibold text-muted-foreground mt-0.5">
+                    {preDrink.calories} • {preDrink.prepTime}
+                  </p>
+                </div>
+                <ChevronRight size={16} className="text-muted-foreground/50 group-hover:text-primary transition-colors" />
+              </button>
+            ))}
           </div>
+
+          <div className="relative flex items-center py-4">
+            <div className="flex-grow border-t border-dashed border-muted-foreground/30"></div>
+            <span className="flex-shrink-0 mx-4 text-xs font-black uppercase tracking-widest text-muted-foreground/50">Or</span>
+            <div className="flex-grow border-t border-dashed border-muted-foreground/30"></div>
+          </div>
+
           <Button
             onClick={handleGenerate}
-            className="rounded-2xl h-14 px-8 bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 hover:scale-105 transition-transform"
+            className="w-full rounded-2xl h-14 bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform"
           >
-            <Sparkles size={18} className="mr-2" /> CREATE {selectedCategory.toUpperCase()}
+            <Sparkles size={18} className="mr-2" /> CREATE CUSTOM WITH AI
           </Button>
         </div>
       ) : isLoading ? (
@@ -91,7 +123,7 @@ export default function LiquidNutrition({ activeProfile }: Props) {
       ) : drink && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
           {/* Drink Card */}
-          <div className="overflow-hidden rounded-[2.5rem] bg-card border-2 shadow-xl">
+          <div className="overflow-hidden rounded-[2.5rem] bg-card shadow-xl">
             <div className={`p-6 ${categories.find(c => c.id === selectedCategory)?.color}`}>
               <div className="flex items-start justify-between">
                 <div className="space-y-1">
@@ -99,6 +131,17 @@ export default function LiquidNutrition({ activeProfile }: Props) {
                   <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground">
                     <Clock size={14} /> {drink.prepTime} • <Zap size={14} className="text-primary" /> {drink.calories}
                   </div>
+                  {drink.costRank && (
+                    <div className="mt-2 flex">
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-black shadow-sm ${
+                        drink.costRank === 'Budget' ? 'bg-emerald-100 text-emerald-700' :
+                        drink.costRank === 'Premium' ? 'bg-amber-100 text-amber-700' :
+                        'bg-blue-100 text-blue-700'
+                      }`}>
+                        {drink.costRank === 'Budget' ? '$' : drink.costRank === 'Premium' ? '$$$' : '$$'} {drink.costRank}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div className="h-12 w-12 rounded-2xl bg-white shadow-md flex items-center justify-center">
                    {categories.find(c => c.id === selectedCategory)?.icon}
@@ -115,6 +158,18 @@ export default function LiquidNutrition({ activeProfile }: Props) {
                   </span>
                 ))}
               </div>
+
+              {drink.insight && (
+                <div className="rounded-xl bg-primary/5 border border-primary/10 p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Sparkles className="text-primary" size={16} />
+                    <h4 className="text-[10px] font-black uppercase tracking-wider text-primary">Nutrition Insight</h4>
+                  </div>
+                  <p className="text-xs font-bold text-foreground/80 leading-relaxed italic">
+                    "{drink.insight}"
+                  </p>
+                </div>
+              )}
 
               <div className="grid gap-6 sm:grid-cols-2">
                  {/* Ingredients */}
@@ -149,13 +204,30 @@ export default function LiquidNutrition({ activeProfile }: Props) {
                 </div>
               </div>
 
+              {drink.kidActivity && (
+                <div className="overflow-hidden rounded-2xl border-2 border-dashed border-peach/30 bg-peach-light/30 p-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="bg-peach rounded-lg p-1.5 text-white">
+                      <ChefHat size={16} />
+                    </div>
+                    <p className="text-xs font-extrabold text-foreground">Mini Chef Opportunity</p>
+                  </div>
+                  <p className="text-xs font-semibold text-foreground/70 leading-relaxed">
+                    <strong className="text-peach">Activity:</strong> {drink.kidActivity}
+                  </p>
+                </div>
+              )}
+
               <div className="pt-4 border-t border-dashed flex gap-3">
-                 <Button
-                    onClick={handleGenerate}
+                  <Button
+                    onClick={() => {
+                      setDrink(null);
+                      handleGenerate();
+                    }}
                     variant="outline"
                     className="flex-1 rounded-xl h-12 font-bold text-xs"
                   >
-                    <Sparkles size={14} className="mr-2" /> Try Another
+                    <Sparkles size={14} className="mr-2" /> Generate AI
                   </Button>
                   <Button
                     onClick={() => setDrink(null)}

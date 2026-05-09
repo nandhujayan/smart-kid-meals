@@ -11,6 +11,7 @@ export interface MealForm {
   availableIngredients?: string[];
   cuisine?: string;
   onlyAvailable?: boolean;
+  preferredMealName?: string; // hint for alternative meal selection
 }
 
 export interface NutritionInfo {
@@ -56,6 +57,9 @@ export interface Meal {
   groceryList: GroceryList;
   nutrition: NutritionInfo;
   alternatives: MealAlternative[];
+  costRank?: "Budget" | "Moderate" | "Premium";
+  kidActivity?: string;
+  insight?: string;
   savedAt?: string;
   childProfileName?: string;
   isAI?: boolean;
@@ -97,12 +101,16 @@ export interface DayPlan {
 export interface UserSubscription {
   tier: 'free' | 'pro';
   status: string;
+  expires_at?: string;
 }
 
 export interface UserUsage {
   generation_count: number;
   last_generation_at?: string;
 }
+
+export const FREE_MEAL_LIMIT = 3;
+export const PRO_MEAL_LIMIT = 50;
 
 const allMeals: Meal[] = [
   {
@@ -452,8 +460,16 @@ export async function generateMeal(form: MealForm, excludeIds: string[] = []): P
     if (user_id) await incrementUsageCount();
     return { ...meal, isAI: true };
   } catch (error: any) {
-    console.warn("AI generation failed, falling back to mock data:", error);
+    console.warn("AI generation failed:", error);
     
+    // Explicitly block users if they hit the 429 Rate Limit (Free tier over)
+    if (error.message?.includes("429") || error.message?.includes("limit reached")) {
+      window.dispatchEvent(new Event("show-pricing-modal"));
+      throw new Error("You have reached your free meal limit. Please subscribe to continue.");
+    }
+
+    // Otherwise, fall back to mock data for API key missing or other network errors
+    console.warn("Falling back to mock data...");
     if (error.message === "API Key missing") {
       toast.error("Gemini API Key missing! Using mock data instead.", {
         description: "Please add your API key in Vercel settings to enable AI.",
@@ -586,21 +602,30 @@ export async function migrateLocalData() {
 }
 
 export async function getChildProfiles(): Promise<ChildProfile[]> {
+  const localKey = "smartkids-profiles";
+  let localProfiles: ChildProfile[] = [];
+  try {
+    const data = localStorage.getItem(localKey);
+    localProfiles = data ? JSON.parse(data) : [];
+  } catch (e) {}
+
   try {
     const user_id = await getUserId();
-    if (!user_id) return []; // PROMPT FIX: If not signed in, show NO profiles.
+    if (!user_id) return localProfiles;
 
-    const query = supabase.from('profiles').select('*');
-    query.eq('user_id', user_id);
-    
-    const { data, error } = await query;
+    // Fix: chain .eq() inline so filter is applied correctly
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', user_id);
+
     if (error) throw error;
     if (data && data.length > 0) return data;
   } catch (err) {
     console.warn("Supabase fetch profiles failed:", err);
   }
 
-  return []; // NO fallback for unauthorized users
+  return localProfiles;
 }
 
 // Helper for generating unique IDs even in non-secure contexts/older browsers
@@ -614,24 +639,29 @@ export function generateSafeId(): string {
 }
 
 export async function saveChildProfile(profile: ChildProfile): Promise<void> {
-  // Save to Supabase
+  // Save to Supabase (Cloud Sync)
   try {
     const user_id = await getUserId();
-    const { error } = await supabase.from('profiles').upsert({
-      id: profile.id,
-      user_id: user_id,
-      name: profile.name,
-      age: profile.age,
-      diet: profile.diet,
-      allergies: profile.allergies,
-      goal: profile.goal,
-      weight: profile.weight,
-      height: profile.height
-    });
-    
-    if (error) {
-      console.error("Supabase profile save error detail:", error);
-      throw error;
+    if (user_id) {
+      const { error } = await supabase.from('profiles').upsert({
+        id: profile.id,
+        user_id: user_id,
+        name: profile.name,
+        age: profile.age,
+        diet: profile.diet,
+        allergies: profile.allergies,
+        goal: profile.goal,
+        weight: profile.weight,
+        height: profile.height
+      });
+      
+      if (error) {
+        console.warn("Supabase profile save error (Cloud):", error.message);
+        // Only toast error if it's not a guest trying to save (which should be blocked above anyway)
+        if (error.code !== '42501') {
+           toast.error("Cloud Sync Failed", { description: "Your profile was saved locally instead." });
+        }
+      }
     }
 
     // Log initial growth entry if weight/height are provided
@@ -646,8 +676,7 @@ export async function saveChildProfile(profile: ChildProfile): Promise<void> {
       await saveGrowthLog(initialLog);
     }
   } catch (err) {
-    console.error("Critical: Supabase profile save failed.", err);
-    // Continue to local storage even if cloud fails
+    console.error("Critical: Profile sync failed.", err);
   }
 
   // Fallback/Mirror to localStorage
@@ -659,7 +688,10 @@ export async function saveChildProfile(profile: ChildProfile): Promise<void> {
 
 export async function removeChildProfile(id: string): Promise<void> {
   try {
-    await supabase.from('profiles').delete().eq('id', id);
+    const user_id = await getUserId();
+    if (user_id) {
+       await supabase.from('profiles').delete().eq('id', id);
+    }
   } catch (err) { console.error("Supabase profile delete failed:", err); }
 
   const profiles = (await getChildProfiles()).filter(p => p.id !== id);
@@ -668,9 +700,16 @@ export async function removeChildProfile(id: string): Promise<void> {
 
 // Saved meals
 export async function getSavedMeals(): Promise<Meal[]> {
+  const localKey = "smartkids-saved-meals";
+  let localMeals: Meal[] = [];
+  try {
+    const data = localStorage.getItem(localKey);
+    localMeals = data ? JSON.parse(data) : [];
+  } catch (e) { console.error("Local fetch error:", e); }
+
   try {
     const user_id = await getUserId();
-    if (!user_id) return [];
+    if (!user_id) return localMeals;
 
     const { data, error } = await supabase
       .from('saved_meals')
@@ -678,8 +717,9 @@ export async function getSavedMeals(): Promise<Meal[]> {
       .eq('user_id', user_id);
       
     if (error) throw error;
+    
     if (data && data.length > 0) {
-      return data.map(m => ({
+      const cloudMeals: Meal[] = data.map(m => ({
         id: m.id,
         mealName: m.meal_name,
         description: m.description,
@@ -696,46 +736,68 @@ export async function getSavedMeals(): Promise<Meal[]> {
         isAI: m.is_ai || false,
         savedAt: m.saved_at
       }));
+
+      // Hydration: Merge cloud into local to ensure latest state is cached
+      const merged = [...cloudMeals];
+      localMeals.forEach(lm => {
+        if (!merged.some(cm => cm.mealName === lm.mealName)) {
+          merged.push(lm);
+        }
+      });
+      localStorage.setItem(localKey, JSON.stringify(merged));
+      return merged;
     }
   } catch (err) {
-    console.warn("Supabase fetch meals failed:", err);
+    console.warn("Supabase fetch meals failed, using local:", err);
   }
 
-  return [];
+  return localMeals;
 }
 
 export async function saveMeal(meal: Meal, profileName?: string): Promise<void> {
   const savedAt = new Date().toISOString();
   
+  // 1. Cloud Save (Supabase)
   try {
     const user_id = await getUserId();
-    const { error } = await supabase.from('saved_meals').insert({
-      user_id: user_id,
-      meal_name: meal.mealName,
-      description: meal.description,
-      cooking_time: meal.cookingTime,
-      difficulty: meal.difficulty,
-      ingredients: meal.ingredients,
-      steps: meal.steps,
-      tips: meal.tips,
-      meal_type: meal.mealType,
-      nutrition: meal.nutrition,
-      grocery_list: meal.groceryList,
-      alternatives: meal.alternatives,
-      child_profile_name: profileName || meal.childProfileName,
-      is_ai: meal.isAI || false,
-      saved_at: savedAt
-    });
-    if (error) throw error;
+    if (user_id) {
+      const { error } = await supabase.from('saved_meals').insert({
+        user_id: user_id,
+        meal_name: meal.mealName,
+        description: meal.description,
+        cooking_time: meal.cookingTime,
+        difficulty: meal.difficulty,
+        ingredients: meal.ingredients,
+        steps: meal.steps,
+        tips: meal.tips,
+        meal_type: meal.mealType,
+        nutrition: meal.nutrition,
+        grocery_list: meal.groceryList,
+        alternatives: meal.alternatives,
+        child_profile_name: profileName || meal.childProfileName,
+        is_ai: meal.isAI || false,
+        saved_at: savedAt
+      });
+      if (error) console.warn("Supabase meal save failed, continuing locally:", error);
+    }
   } catch (err) {
-    console.error("Supabase meal save failed:", err);
+    console.error("Supabase meal save error:", err);
   }
 
-  const meals = await getSavedMeals();
-  const exists = meals.some(m => m.mealName === meal.mealName);
-  if (!exists) {
-    meals.unshift({ ...meal, savedAt: new Date().toLocaleDateString(), childProfileName: profileName });
-    localStorage.setItem("smartkids-saved-meals", JSON.stringify(meals));
+  // 2. Local Save (Persistence/Offline)
+  const localKey = "smartkids-saved-meals";
+  const meals = JSON.parse(localStorage.getItem(localKey) || "[]") as Meal[];
+  const mealToSave = { 
+    ...meal, 
+    id: meal.id || generateSafeId(),
+    savedAt: new Date().toLocaleDateString(), 
+    childProfileName: profileName || meal.childProfileName 
+  };
+  
+  if (!meals.some(m => m.mealName === meal.mealName)) {
+    meals.unshift(mealToSave);
+    localStorage.setItem(localKey, JSON.stringify(meals));
+    toast.success("Meal saved to your collection! 📂");
   }
 }
 
@@ -759,21 +821,48 @@ export function setNotificationSetting(enabled: boolean): void {
 
 // Weekly Plan Persistence
 export async function saveWeeklyPlan(plan: DayPlan[]): Promise<void> {
+  // 1. Local Persistence (Session/Offline)
+  localStorage.setItem("smartkids-weekly-plan", JSON.stringify(plan));
+
+  // 2. Cloud Persistence — upsert (not insert) to prevent unbounded duplicate rows
   try {
     const user_id = await getUserId();
-    await supabase.from('weekly_plans').insert({ 
-      user_id: user_id,
-      days: plan 
-    });
-  } catch (err) { console.error("Supabase weekly plan save failed:", err); }
-  
-  localStorage.setItem("smartkids-weekly-plan", JSON.stringify(plan));
+    if (user_id) {
+      // Check if a plan already exists for this user
+      const { data: existing } = await supabase
+        .from('weekly_plans')
+        .select('id')
+        .eq('user_id', user_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existing?.id) {
+        await supabase.from('weekly_plans').update({ days: plan }).eq('id', existing.id);
+      } else {
+        await supabase.from('weekly_plans').insert({ user_id, days: plan });
+      }
+      toast.success("Saved to your account! ☁️");
+    } else {
+      toast.info("Saved locally! 📁", { description: "Sign in to sync your plans across devices." });
+    }
+  } catch (err: any) {
+    console.error("Supabase weekly plan sync failed:", err);
+    toast.error("Cloud Sync Delayed", { description: "We've saved it to your device for now." });
+  }
 }
 
 export async function getSavedWeeklyPlan(): Promise<DayPlan[] | null> {
+  const localKey = "smartkids-weekly-plan";
+  let localPlan: DayPlan[] | null = null;
+  try {
+    const data = localStorage.getItem(localKey);
+    localPlan = data ? JSON.parse(data) : null;
+  } catch (e) { console.error("Local fetch error:", e); }
+
   try {
     const user_id = await getUserId();
-    if (!user_id) return null;
+    if (!user_id) return localPlan;
 
     const { data, error } = await supabase
       .from('weekly_plans')
@@ -784,12 +873,47 @@ export async function getSavedWeeklyPlan(): Promise<DayPlan[] | null> {
       .maybeSingle();
 
     if (error) throw error;
-    if (data) return data.days as DayPlan[];
+    if (data) {
+       const cloudPlan = data.days as DayPlan[];
+       // Sync to local for offline use
+       localStorage.setItem(localKey, JSON.stringify(cloudPlan));
+       return cloudPlan;
+    }
   } catch (err) {
-    console.warn("Supabase fetch weekly plan failed:", err);
+    console.warn("Supabase fetch weekly plan failed, using local:", err);
   }
 
-  return null;
+  return localPlan;
+}
+
+export async function getSavedWeeklyPlans(): Promise<{id: string, days: DayPlan[], created_at: string}[]> {
+  try {
+    const user_id = await getUserId();
+    if (!user_id) return [];
+
+    const { data, error } = await supabase
+      .from('weekly_plans')
+      .select('id, days, created_at')
+      .eq('user_id', user_id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.warn("Supabase fetch weekly plans history failed:", err);
+    return [];
+  }
+}
+
+export async function removeWeeklyPlan(id: string): Promise<void> {
+  try {
+    const { error } = await supabase.from('weekly_plans').delete().eq('id', id);
+    if (error) throw error;
+    toast.success("Plan removed");
+  } catch (err) {
+    console.error("Supabase weekly plan delete failed:", err);
+    toast.error("Failed to remove plan");
+  }
 }
 
 // Growth Tracking
@@ -815,16 +939,19 @@ export async function getGrowthLogs(profileId: string): Promise<GrowthLog[]> {
 
 export async function saveGrowthLog(log: GrowthLog): Promise<void> {
   try {
-    const { error } = await supabase.from('growth_logs').upsert({
-      id: log.id,
-      profile_id: log.profile_id,
-      weight: log.weight,
-      height: log.height,
-      logged_at: log.logged_at
-    });
-    if (error) throw error;
+    const user_id = await getUserId();
+    if (user_id) {
+      const { error } = await supabase.from('growth_logs').upsert({
+        id: log.id,
+        profile_id: log.profile_id,
+        weight: log.weight,
+        height: log.height,
+        logged_at: log.logged_at
+      });
+      if (error) throw error;
+    }
   } catch (err) {
-    console.error("Supabase growth log save failed:", err);
+    console.warn("Supabase growth log sync skipped or failed:", err);
   }
 
   // Fallback to localStorage
@@ -871,15 +998,18 @@ export async function saveWaterIntake(profileId: string, amount: number): Promis
   const loggedAt = new Date().toISOString();
 
   try {
-    const { error } = await supabase.from('water_logs').insert({
-      id: generateSafeId(),
-      profile_id: profileId,
-      amount: amount,
-      logged_at: loggedAt
-    });
-    if (error) throw error;
+    const user_id = await getUserId();
+    if (user_id) {
+      const { error } = await supabase.from('water_logs').insert({
+        id: generateSafeId(),
+        profile_id: profileId,
+        amount: amount,
+        logged_at: loggedAt
+      });
+      if (error) throw error;
+    }
   } catch (err) {
-    console.error("Supabase water log save failed:", err);
+    console.warn("Supabase water log sync skipped or failed:", err);
   }
 
   // Fallback to localStorage
@@ -911,8 +1041,112 @@ export interface Drink {
   calories: string;
   benefits: string[];
   category: string;
+  costRank?: "Budget" | "Moderate" | "Premium";
+  kidActivity?: string;
+  insight?: string;
   isAI?: boolean;
 }
+
+export const predefinedDrinks: Drink[] = [
+  // Milkshakes
+  {
+    id: "pre-shake-1", drinkName: "Classic Chocolate Power Shake", prepTime: "5 min",
+    ingredients: ["1 cup full-fat milk", "2 tbsp unsweetened cocoa powder", "1 ripe banana", "1 tbsp peanut butter", "1 tsp honey"],
+    steps: ["Peel and slice the banana.", "Add all ingredients into a blender.", "Blend on high until smooth and creamy.", "Pour into a glass and serve immediately."],
+    calories: "350 kcal", benefits: ["High in protein", "Energy boosting", "Rich in calcium"],
+    category: "Milkshake", costRank: "Budget",
+    kidActivity: "Help peel the banana and drop it into the blender.",
+    insight: "Cocoa provides antioxidants, while peanut butter offers healthy fats for brain development.",
+    isAI: false
+  },
+  {
+    id: "pre-shake-2", drinkName: "Creamy Vanilla Almond Shake", prepTime: "5 min",
+    ingredients: ["1 cup milk", "1/2 tsp pure vanilla extract", "10 soaked almonds (peeled)", "1 tbsp maple syrup"],
+    steps: ["Ensure almonds are soaked overnight and peeled.", "Blend almonds with a splash of milk to make a paste.", "Add the remaining milk, vanilla, and syrup.", "Blend until frothy."],
+    calories: "280 kcal", benefits: ["Brain boosting", "Bone health", "Easy to digest"],
+    category: "Milkshake", costRank: "Moderate",
+    kidActivity: "Help peel the soaked almonds.",
+    insight: "Almonds are fantastic for cognitive development in growing kids.",
+    isAI: false
+  },
+  {
+    id: "pre-shake-3", drinkName: "Pistachio Green Delight", prepTime: "10 min",
+    ingredients: ["1 cup milk", "2 tbsp shelled pistachios", "1 cardamom pod (seeds only)", "1 tsp honey"],
+    steps: ["Crush the pistachios slightly.", "Add milk, pistachios, cardamom, and honey to blender.", "Blend until smooth.", "Serve with a tiny pinch of crushed pistachios on top."],
+    calories: "250 kcal", benefits: ["Rich in iron", "Vitamin B6", "Deliciously aromatic"],
+    category: "Milkshake", costRank: "Premium",
+    kidActivity: "Sprinkle the crushed pistachios on top of the finished shake.",
+    insight: "Cardamom aids digestion and pistachios provide essential minerals.",
+    isAI: false
+  },
+  {
+    id: "pre-shake-4", drinkName: "Butterscotch Caramel Shake", prepTime: "5 min",
+    ingredients: ["1 cup milk", "1 tbsp butterscotch syrup", "1/2 frozen banana", "1 pinch sea salt"],
+    steps: ["Add milk and frozen banana to blender.", "Add the butterscotch syrup and salt.", "Blend until creamy.", "Serve cold."],
+    calories: "300 kcal", benefits: ["Instant energy", "Mood booster", "Calcium rich"],
+    category: "Milkshake", costRank: "Moderate",
+    kidActivity: "Drizzle a tiny bit of extra syrup inside the glass before pouring.",
+    insight: "A comforting treat that provides necessary calcium with a flavor kids love.",
+    isAI: false
+  },
+  // Smoothies
+  {
+    id: "pre-smoothie-1", drinkName: "Berry Blast Smoothie", prepTime: "5 min",
+    ingredients: ["1/2 cup mixed berries", "1/2 cup yogurt", "1/2 cup apple juice", "1 tsp chia seeds"],
+    steps: ["Wash the berries thoroughly.", "Add berries, yogurt, and liquid to blender.", "Blend until smooth.", "Stir in chia seeds and serve."],
+    calories: "180 kcal", benefits: ["Antioxidant powerhouse", "Immunity boosting", "Fiber rich"],
+    category: "Smoothie", costRank: "Moderate",
+    kidActivity: "Help wash the berries.",
+    insight: "Berries are incredible for immune health, and yogurt provides probiotics for gut health.",
+    isAI: false
+  },
+  {
+    id: "pre-smoothie-2", drinkName: "Tropical Mango Smoothie", prepTime: "5 min",
+    ingredients: ["1 cup chopped mango", "1/2 cup coconut milk", "1/2 banana"],
+    steps: ["Add all ingredients to blender.", "Blend until perfectly smooth.", "Serve immediately."],
+    calories: "220 kcal", benefits: ["Vitamin C", "Healthy fats", "Hydrating"],
+    category: "Smoothie", costRank: "Budget",
+    kidActivity: "Help drop the mango chunks into the blender.",
+    insight: "Mango is packed with vitamins A and C, crucial for eye and immune health.",
+    isAI: false
+  },
+  // Juices
+  {
+    id: "pre-juice-1", drinkName: "Fresh Orange & Carrot Juice", prepTime: "10 min",
+    ingredients: ["2 sweet oranges", "1 medium carrot"],
+    steps: ["Peel oranges and remove seeds.", "Wash, peel, and chop the carrot.", "Run both through a juicer.", "Stir and serve immediately."],
+    calories: "120 kcal", benefits: ["Vision support", "Immunity", "Natural vitamin C"],
+    category: "Juice", costRank: "Budget",
+    kidActivity: "Help peel the oranges.",
+    insight: "Carrots provide beta-carotene for healthy eyes, naturally sweetened by the oranges.",
+    isAI: false
+  },
+  {
+    id: "pre-juice-2", drinkName: "Hydrating Watermelon Splash", prepTime: "5 min",
+    ingredients: ["2 cups diced watermelon", "1 tsp lime juice", "Mint leaves (optional)"],
+    steps: ["Add watermelon to blender.", "Blend until liquid.", "Strain if desired, add lime juice, and serve."],
+    calories: "90 kcal", benefits: ["Deep hydration", "Electrolytes", "Refreshing"],
+    category: "Juice", costRank: "Budget",
+    kidActivity: "Help squeeze the lime.",
+    insight: "Watermelon is 92% water, making it the perfect hydrating juice for active kids.",
+    isAI: false
+  },
+  // High-calorie
+  {
+    id: "pre-hc-1", drinkName: "Avocado Banana Weight-Gainer", prepTime: "5 min",
+    ingredients: ["1/2 ripe avocado", "1 large banana", "1 cup whole milk", "1 tbsp honey", "1 tbsp chia seeds"],
+    steps: ["Scoop avocado flesh into blender.", "Add banana, milk, and honey.", "Blend until smooth.", "Stir in chia seeds."],
+    calories: "450 kcal", benefits: ["Healthy fats", "High calorie", "Brain development"],
+    category: "High-calorie", costRank: "Premium",
+    kidActivity: "Help scoop the avocado.",
+    insight: "Avocados are rich in monounsaturated fats, perfect for healthy weight gain in growing children.",
+    isAI: false
+  }
+];
+
+export const getPredefinedDrinks = (category: string): Drink[] => {
+  return predefinedDrinks.filter(d => d.category === category);
+};
 
 export async function generateDrink(type: string, age: string, goal: string): Promise<Drink> {
   const { generateAIDrink } = await import("./gemini");
@@ -927,6 +1161,13 @@ export async function generateDrink(type: string, age: string, goal: string): Pr
     };
   } catch (err) {
     console.warn("AI drink generation failed, using mock:", err);
+    const categoryDrinks = getPredefinedDrinks(type);
+    if (categoryDrinks.length > 0) {
+      const randomDrink = categoryDrinks[Math.floor(Math.random() * categoryDrinks.length)];
+      return { ...randomDrink, id: Date.now().toString() };
+    }
+    
+    // Fallback if no predefined matches (shouldn't happen with our list)
     return {
       id: Date.now().toString(),
       drinkName: `Healthy ${type}`,
@@ -947,7 +1188,7 @@ export const getUserSubscription = async (userId: string): Promise<UserSubscript
   try {
     const { data, error } = await supabase
       .from('user_subscriptions')
-      .select('tier, status')
+      .select('tier, status, expires_at')
       .eq('user_id', userId)
       .maybeSingle();
 
@@ -1021,7 +1262,7 @@ export const incrementUsage = async (userId: string): Promise<void> => {
   }
 };
 export const clearAllLocalData = () => {
-  const keys = [
+  const staticKeys = [
     "smartkids-profiles",
     "smartkids-saved-meals",
     "smartkids-weekly-plan",
@@ -1030,5 +1271,15 @@ export const clearAllLocalData = () => {
     "smartkids-guest-gens",
     "smartkids-hydration-logs"
   ];
-  keys.forEach(key => localStorage.removeItem(key));
+  staticKeys.forEach(key => localStorage.removeItem(key));
+
+  // Also clear dynamic keys: water logs (per profile per day) and growth logs (per profile)
+  const dynamicKeysToRemove: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && (key.startsWith('smartkids-water-') || key.startsWith('smartkids-growth-'))) {
+      dynamicKeysToRemove.push(key);
+    }
+  }
+  dynamicKeysToRemove.forEach(key => localStorage.removeItem(key));
 };

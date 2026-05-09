@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
-import { CookingPot, Bookmark, Calendar, Users, Bell, BellOff, Droplet, ChevronDown, Plus, Milk } from "lucide-react";
+import { CookingPot, Bookmark, Calendar, Users, Bell, BellOff, Droplet, ChevronDown, Plus, Milk, Home } from "lucide-react";
+import HomePage from "./HomePage";
 import MealForm from "@/components/MealForm";
 import MealResult from "@/components/MealResult";
 import SavedMeals from "@/components/SavedMeals";
+import SavedWeeklyPlans from "@/components/SavedWeeklyPlans";
 import WeeklyPlanner from "@/components/WeeklyPlanner";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import AuthModal from "@/components/AuthModal";
@@ -10,8 +12,9 @@ import Pricing from "@/components/Pricing";
 import ChildProfiles from "@/components/ChildProfiles";
 import WaterTracker from "@/components/WaterTracker";
 import LiquidNutrition from "@/components/LiquidNutrition";
-import ThemePicker from "@/components/ThemePicker";
 import SystemStatus from "@/components/SystemStatus";
+import UsageProgress from "@/components/UsageProgress";
+import SubscriptionBanner from "@/components/SubscriptionBanner";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { LogOut, Sparkles, Star, Menu } from "lucide-react";
@@ -26,10 +29,12 @@ import {
   generateMeal, generateWeeklyPlan,
   getNotificationSetting, setNotificationSetting,
   getSavedWeeklyPlan, saveWeeklyPlan,
-  getChildProfiles, migrateLocalData,
+  getChildProfiles, migrateLocalData, getUserUsage,
+  FREE_MEAL_LIMIT, PRO_MEAL_LIMIT,
   type Meal, type MealForm as MealFormType, type DayPlan, type ChildProfile,
 } from "@/lib/meal-data";
 import { toast } from "sonner";
+import { differenceInDays, parseISO } from "date-fns";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,11 +44,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-type Tab = "generate" | "weekly" | "water" | "liquid" | "saved" | "profiles";
+type Tab = "home" | "generate" | "weekly" | "water" | "liquid" | "saved" | "profiles";
 type View = "tabs" | "result" | "weekly-view";
 
 export default function Index() {
-  const [tab, setTab] = useState<Tab>("generate");
+  const [tab, setTab] = useState<Tab>("home");
   const [view, setView] = useState<View>("tabs");
   const [meal, setMeal] = useState<Meal | null>(null);
   const [weeklyPlan, setWeeklyPlan] = useState<DayPlan[] | null>(null);
@@ -51,6 +56,7 @@ export default function Index() {
   const [profiles, setProfiles] = useState<ChildProfile[]>([]);
   const [activeProfile, setActiveProfile] = useState<ChildProfile | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [usageCount, setUsageCount] = useState(0);
 
   useEffect(() => {
     const loadSaved = async () => {
@@ -65,13 +71,49 @@ export default function Index() {
     };
     loadSaved();
   }, []);
-  const { user } = useAuth();
+
+  const refreshProfiles = async () => {
+    const projs = await getChildProfiles();
+    setProfiles(projs);
+    return projs;
+  };
+
+  const { user, isPro, expiresAt } = useAuth();
+
+  const getSubscriptionDaysLeft = () => {
+    if (!isPro || !expiresAt) return null;
+    try {
+      const days = differenceInDays(parseISO(expiresAt), new Date());
+      return days;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const shouldShowPricing = () => {
+    if (!isPro) return true;
+    const days = getSubscriptionDaysLeft();
+    return days !== null && days <= 3;
+  };
+
+  const fetchUsage = async () => {
+    if (user) {
+      const stats = await getUserUsage(user.id);
+      if (stats) setUsageCount(stats.generation_count);
+    } else {
+      setUsageCount(getGuestGenerations());
+    }
+  };
+
+  useEffect(() => {
+    fetchUsage();
+  }, [user]);
 
   useEffect(() => {
     if (user) {
       const runMigration = async () => {
         // If guest limit was reached, show pricing after login
-        if (getGuestGenerations() >= 3) {
+        if (getGuestGenerations() >= 3 && shouldShowPricing()) {
           setIsPricingModalOpen(true);
         }
 
@@ -84,8 +126,7 @@ export default function Index() {
         // Refresh profiles after migration
         const plan = await getSavedWeeklyPlan();
         if (plan) setWeeklyPlan(plan);
-        const projs = await getChildProfiles();
-        setProfiles(projs);
+        await refreshProfiles();
       };
       runMigration();
     }
@@ -96,12 +137,12 @@ export default function Index() {
   const [isFromWeekly, setIsFromWeekly] = useState(false);
   const [activeSlot, setActiveSlot] = useState<{ dayIndex: number; mealType: string } | null>(null);
 
-  // Auth & Pricing Modal State
+  const [savedSubTab, setSavedSubTab] = useState<"meals" | "plans">("meals");
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
   const [authModalConfig, setAuthModalConfig] = useState({ title: "", description: "" });
 
-  const { signOut, isPro, subscriptionTier } = useAuth();
+  const { signOut, subscriptionTier } = useAuth();
 
   const getGuestGenerations = () => {
     return parseInt(localStorage.getItem("smartkids-guest-gens") || "0");
@@ -112,6 +153,32 @@ export default function Index() {
   };
 
   const checkAuthAndUsage = (action: string) => {
+    // If they are a guest and trying to generate, block after 3
+    if (!user && action === "generate") {
+      if (usageCount >= FREE_MEAL_LIMIT) {
+        setIsPricingModalOpen(true);
+        toast.error("Free Limit Reached", {
+          description: `You have generated ${FREE_MEAL_LIMIT} free meals. Please subscribe to unlock more!`
+        });
+        return false;
+      }
+    }
+
+    // Pro Limit enforcement
+    if (user && action === "generate") {
+      const limit = isPro ? PRO_MEAL_LIMIT : FREE_MEAL_LIMIT;
+      if (usageCount >= limit) {
+        if (!isPro) {
+          setIsPricingModalOpen(true);
+        } else {
+          toast.error("Monthly Limit Reached", {
+            description: `You have reached your limit of ${PRO_MEAL_LIMIT} meals this month.`
+          });
+        }
+        return false;
+      }
+    }
+
     if (!user) {
       if (action === "save" || action === "profiles") {
         setAuthModalConfig({
@@ -134,14 +201,28 @@ export default function Index() {
       const result = await generateMeal(form);
       setMeal(result);
       setView("result");
+      setIsFromWeekly(false);
+      setActiveSlot(null);
       
       // Increment usage in DB if user is logged in
       if (user) {
-        import("@/lib/meal-data").then(m => m.incrementUsage(user.id));
+        await import("@/lib/meal-data").then(m => m.incrementUsage(user.id));
+      } else {
+        incrementGuestGenerations();
       }
-    } catch (error) {
+      
+      // Refresh usage
+      fetchUsage();
+    } catch (error: any) {
       console.error(error);
-      toast.error("Failed to generate meal. Please check your API key.");
+      if ((error.message?.includes("free meal limit") || error.message?.includes("429")) && shouldShowPricing()) {
+        toast.error("Free Limit Reached", {
+          description: "You have generated 3 free meals. Please subscribe to unlock unlimited meals!"
+        });
+        // Modal will open via the dispatched event
+      } else {
+        toast.error("Failed to generate meal. Please try again.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -150,6 +231,15 @@ export default function Index() {
   const handleGenerateWeekly = async (form: MealFormType) => {
     if (!checkAuthAndUsage("generate")) return;
 
+    if (!user) {
+      setAuthModalConfig({ title: "Sign In Required", description: "Please sign in to generate weekly plans." });
+      setIsAuthModalOpen(true);
+      return;
+    }
+    if (!isPro && shouldShowPricing()) {
+      setIsPricingModalOpen(true);
+      return;
+    }
     setIsLoading(true);
     setLastForm(form);
     try {
@@ -157,15 +247,16 @@ export default function Index() {
       setWeeklyPlan(plan);
       await saveWeeklyPlan(plan);
       setView("weekly-view");
-      toast.success("Weekly plan generated and saved!");
-
-      // Increment usage in DB if user is logged in
-      if (user) {
-        import("@/lib/meal-data").then(m => m.incrementUsage(user.id));
+      if (user) await import("@/lib/meal-data").then(m => m.incrementUsage(user.id));
+      
+      // Refresh usage
+      fetchUsage();
+    } catch (error: any) {
+      if (error.message?.includes('limit reached') && shouldShowPricing()) {
+        setIsPricingModalOpen(true);
+      } else {
+        toast.error("Failed to generate weekly plan.");
       }
-    } catch (error) {
-      console.error(error);
-      toast.error("Failed to generate weekly plan.");
     } finally {
       setIsLoading(false);
     }
@@ -213,8 +304,19 @@ export default function Index() {
     }
   };
 
-  const handleToggleNotifications = () => {
+  const handleToggleNotifications = async () => {
     const next = !notifications;
+    if (next && 'Notification' in window) {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        toast.error("Notification permission denied", { description: "Please enable notifications in your browser settings." });
+        return;
+      }
+      // Schedule a sample reminder to confirm it works
+      setTimeout(() => {
+        new Notification("Mom's Kitchen 🍽️", { body: "Don't forget to plan today's meals for your little one!", icon: "/favicon.ico" });
+      }, 3000);
+    }
     setNotifications(next);
     setNotificationSetting(next);
     toast.success(next ? "Daily reminders enabled 🔔" : "Reminders turned off");
@@ -226,7 +328,7 @@ export default function Index() {
   };
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-4xl flex-col bg-background shadow-xl border-x overflow-x-hidden pt-4 sm:pt-0">
+    <div className="mx-auto flex min-h-screen max-w-4xl flex-col bg-background shadow-xl overflow-x-hidden pt-4 sm:pt-0">
       <LoadingOverlay isVisible={isLoading} formData={lastForm} />
 
       {/* Header */}
@@ -309,6 +411,18 @@ export default function Index() {
                           <span className="text-sm">Weekly Plans</span>
                         </button>
                       </div>
+                    </section>
+
+                    {/* AI Usage Section */}
+                    <section className="px-2">
+                      <UsageProgress 
+                        count={usageCount} 
+                        isPro={isPro} 
+                        onUpgrade={() => {
+                          setIsPricingModalOpen(true);
+                          setIsDrawerOpen(false);
+                        }}
+                      />
                     </section>
                   </div>
 
@@ -395,12 +509,14 @@ export default function Index() {
 
         {/* Tabs - Only show core navigation */}
         {view === "tabs" && (
-          <div className="mx-auto max-w-2xl mt-4 px-0">
-            <div className="flex gap-1 rounded-2xl bg-muted p-1">
+          <div className="mx-auto max-w-2xl mt-4 px-0 overflow-x-auto scrollbar-hide">
+            <div className="flex gap-1 rounded-2xl bg-muted p-1 min-w-max sm:min-w-0">
+              <TabBtn active={tab === "home"} onClick={() => setTab("home")} icon={<Home size={14} />} label="Home" />
               <TabBtn active={tab === "generate"} onClick={() => setTab("generate")} icon={<CookingPot size={14} />} label="Meal" />
               <TabBtn active={tab === "weekly"} onClick={() => setTab("weekly")} icon={<Calendar size={14} />} label="Weekly" />
               <TabBtn active={tab === "water"} onClick={() => setTab("water")} icon={<Droplet size={14} />} label="Water" />
               <TabBtn active={tab === "liquid"} onClick={() => setTab("liquid")} icon={<Milk size={14} />} label="Drinks" />
+              <TabBtn active={tab === "saved"} onClick={() => setTab("saved")} icon={<Bookmark size={14} />} label="Saved" />
             </div>
           </div>
         )}
@@ -408,6 +524,20 @@ export default function Index() {
 
       {/* Content */}
       <main className={`flex-1 px-5 pb-8 pt-2 ${view === "result" ? "" : "mx-auto w-full max-w-2xl"}`}>
+        {view === "tabs" && (
+          <div className="mb-6 mt-4 px-2 animate-slide-up text-center">
+            <h1 className="text-xl sm:text-2xl font-black tracking-tight bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent">
+              {tab === "home" && "Welcome to Smart Kids Meals"}
+              {tab === "generate" && "Create a Healthy Meal"}
+              {tab === "weekly" && "Weekly Nutrition Planner"}
+              {tab === "water" && "Water Intake Tracker"}
+              {tab === "liquid" && "Liquid Nutrition Guide"}
+              {tab === "saved" && "Your Saved Collections"}
+              {tab === "profiles" && "Manage Kid Profiles"}
+            </h1>
+          </div>
+        )}
+
         {view === "result" && meal ? (
           <MealResult
             meal={meal}
@@ -420,24 +550,90 @@ export default function Index() {
           />
         ) : view === "weekly-view" && weeklyPlan ? (
           <WeeklyPlanner plan={weeklyPlan} onViewMeal={handleWeeklyMealView} onBack={handleBack} />
+        ) : tab === "home" ? (
+          <HomePage childName={activeProfile?.name} onGenerateClick={() => setTab("generate")} />
         ) : tab === "generate" ? (
-          <MealForm onGenerate={handleGenerate} onGenerateWeekly={handleGenerateWeekly} isLoading={isLoading} activeProfile={activeProfile} />
+          <div className="space-y-8 animate-slide-up">
+            {getSubscriptionDaysLeft() !== null && getSubscriptionDaysLeft()! <= 3 && (
+              <SubscriptionBanner 
+                daysLeft={getSubscriptionDaysLeft()!} 
+                onRenew={() => setIsPricingModalOpen(true)} 
+              />
+            )}
+            <UsageProgress 
+              count={usageCount} 
+              isPro={isPro} 
+              onUpgrade={() => setIsPricingModalOpen(true)}
+            />
+            <div className="premium-3d-card p-4 sm:p-6">
+              <MealForm onGenerate={handleGenerate} onGenerateWeekly={handleGenerateWeekly} isLoading={isLoading} activeProfile={activeProfile} />
+            </div>
+          </div>
         ) : tab === "weekly" ? (
-          <MealForm onGenerate={handleGenerate} onGenerateWeekly={handleGenerateWeekly} isLoading={isLoading} activeProfile={activeProfile} weeklyMode />
+          <div className="space-y-8 animate-slide-up">
+             {getSubscriptionDaysLeft() !== null && getSubscriptionDaysLeft()! <= 3 && (
+               <SubscriptionBanner 
+                 daysLeft={getSubscriptionDaysLeft()!} 
+                 onRenew={() => setIsPricingModalOpen(true)} 
+               />
+             )}
+             <UsageProgress 
+              count={usageCount} 
+              isPro={isPro} 
+              onUpgrade={() => setIsPricingModalOpen(true)}
+            />
+            <div className="premium-3d-card p-4 sm:p-6">
+              <MealForm onGenerate={handleGenerate} onGenerateWeekly={handleGenerateWeekly} isLoading={isLoading} activeProfile={activeProfile} weeklyMode />
+            </div>
+          </div>
         ) : tab === "water" ? (
-          <WaterTracker activeProfile={activeProfile} />
+          <div className="space-y-8">
+            <div className="premium-3d-card p-4 sm:p-6">
+              <WaterTracker activeProfile={activeProfile} />
+            </div>
+          </div>
         ) : tab === "liquid" ? (
-          <LiquidNutrition activeProfile={activeProfile} />
+          <div className="space-y-8">
+            <div className="premium-3d-card p-4 sm:p-6">
+             <LiquidNutrition activeProfile={activeProfile} />
+            </div>
+          </div>
         ) : tab === "saved" ? (
-          <SavedMeals onSelect={handleSelectSaved} />
+          <div className="space-y-8">
+            <div className="premium-3d-card p-4 sm:p-6">
+              <div className="flex gap-2 mb-4">
+                <button onClick={() => setSavedSubTab("meals")} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${savedSubTab === "meals" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>Meals</button>
+                <button onClick={() => setSavedSubTab("plans")} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${savedSubTab === "plans" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>Weekly Plans</button>
+              </div>
+              {savedSubTab === "meals" ? (
+                <SavedMeals onSelect={handleSelectSaved} />
+              ) : (
+                <SavedWeeklyPlans 
+                  onLoad={(plan) => {
+                    setWeeklyPlan(plan);
+                    setView("weekly-view");
+                  }} 
+                />
+              )}
+            </div>
+          </div>
         ) : (
           <div className="space-y-8">
-            <ChildProfiles
-              activeProfileId={activeProfile?.id ?? null}
-              onSelect={handleSelectProfile}
-              onAuthRequired={checkAuthAndUsage}
-            />
-            <SystemStatus />
+            <div className="premium-3d-card p-4 sm:p-6">
+              <ChildProfiles
+                activeProfileId={activeProfile?.id ?? null}
+                onSelect={handleSelectProfile}
+                onAuthRequired={checkAuthAndUsage}
+                isPro={isPro}
+                onUpgradeRequired={() => {
+                  if (shouldShowPricing()) setIsPricingModalOpen(true);
+                  else toast.success("You are already on the Pro plan!");
+                }}
+                onProfilesChange={refreshProfiles}
+              />
+            </div>
+            <div className="h-px w-full border-t-2 border-dashed border-muted-foreground/20 my-4" />
+            <div className="premium-3d-card p-4 sm:p-6"><SystemStatus /></div>
           </div>
         )}
       </main>
@@ -463,8 +659,7 @@ function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: ()
       className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-black transition-all btn-press ${active ? "bg-background text-foreground shadow-md ring-1 ring-black/5" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
         }`}
     >
-      {icon} <span className="hidden sm:inline">{label}</span>
-      {active && <span className="sm:hidden">{label}</span>}
+      {icon} <span>{label}</span>
     </button>
   );
 }

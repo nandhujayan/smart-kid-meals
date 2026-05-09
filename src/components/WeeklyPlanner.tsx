@@ -20,7 +20,6 @@ export default function WeeklyPlanner({ plan, onViewMeal, onBack }: Props) {
   const handleSave = () => {
     saveWeeklyPlan(plan);
     setSaved(true);
-    toast.success("Weekly plan saved! 📁");
     setTimeout(() => setSaved(false), 2000);
   };
 
@@ -118,9 +117,20 @@ function MealCard({ meal, label, delay, onView }: { meal: Meal; label: string; d
       <div className="min-w-0 flex-1">
         <p className="text-xs font-bold text-muted-foreground">{label}</p>
         <p className="mt-0.5 truncate font-extrabold text-foreground">{meal.mealName}</p>
-        <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-          <Clock size={12} />
-          {meal.cookingTime}
+        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1">
+            <Clock size={12} />
+            {meal.cookingTime}
+          </div>
+          {meal.costRank && (
+            <span className={`font-black ${
+              meal.costRank === 'Budget' ? 'text-emerald-500' :
+              meal.costRank === 'Premium' ? 'text-amber-500' :
+              'text-blue-500'
+            }`}>
+              • {meal.costRank === 'Budget' ? '$' : meal.costRank === 'Premium' ? '$$$' : '$$'}
+            </span>
+          )}
         </div>
       </div>
       <ChevronRight size={18} className="shrink-0 text-muted-foreground" />

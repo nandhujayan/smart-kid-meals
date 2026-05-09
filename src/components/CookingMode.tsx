@@ -27,8 +27,27 @@ export default function CookingMode({ meal, onClose }: Props) {
     if (!isLast) setCurrentStep(currentStep + 1);
   };
 
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
   const handleReadAloud = () => {
-    toast.info("🔊 Read aloud feature coming soon!");
+    if (!('speechSynthesis' in window)) {
+      toast.error("Text-to-speech is not supported in this browser.");
+      return;
+    }
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+    const text = steps[currentStep];
+    if (!text) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.9;
+    utterance.pitch = 1;
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    setIsSpeaking(true);
+    window.speechSynthesis.speak(utterance);
   };
 
   return (
@@ -96,11 +115,9 @@ export default function CookingMode({ meal, onClose }: Props) {
               {steps[currentStep] || "No instructions provided."}
             </p>
             
-            <button
-              onClick={handleReadAloud}
-              className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-black text-muted-foreground hover:bg-muted bg-muted/20 transition-all btn-press"
-            >
-              <Volume2 size={14} /> Read Aloud
+            <button onClick={handleReadAloud}
+              className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-black transition-all btn-press ${isSpeaking ? "bg-primary/20 text-primary" : "text-muted-foreground hover:bg-muted bg-muted/20"}`}>
+              <Volume2 size={14} /> {isSpeaking ? "Stop Reading" : "Read Aloud"}
             </button>
           </div>
         </div>

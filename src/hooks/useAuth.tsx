@@ -9,8 +9,9 @@ interface AuthContextType {
   loading: boolean;
   subscriptionTier: string;
   isPro: boolean;
+  expiresAt: string | null;
+  sessionKey: number;
   signOut: () => Promise<void>;
-  signInAsGuest: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -19,8 +20,9 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   subscriptionTier: 'free',
   isPro: false,
+  expiresAt: null,
+  sessionKey: 0,
   signOut: async () => {},
-  signInAsGuest: () => {},
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -28,41 +30,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [subscriptionTier, setSubscriptionTier] = useState<string>('free');
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [sessionKey, setSessionKey] = useState(0);
 
-  const fetchSubscription = async (userId: string, userObj: User) => {
-    // Magic Mock for specific phone number
-    const phone = userObj.phone || userObj.user_metadata?.phone;
-    if (phone === '7012793080' || phone === '+917012793080') {
-      console.log("Mocking Pro status for account:", phone);
-      setSubscriptionTier('pro');
-      return;
-    }
-
+  const fetchSubscription = async (userId: string) => {
     const sub = await getUserSubscription(userId);
     if (sub) {
       setSubscriptionTier(sub.tier);
+      setExpiresAt(sub.expires_at || null);
     }
   };
 
   useEffect(() => {
-    // Check active sessions and sets the user
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchSubscription(session.user.id, session.user);
-      }
+      if (session?.user) fetchSubscription(session.user.id);
       setLoading(false);
     });
 
-    // Listen for changes on auth state (sign in, sign out, etc.)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchSubscription(session.user.id, session.user);
+        fetchSubscription(session.user.id);
       } else {
         setSubscriptionTier('free');
+        setExpiresAt(null);
       }
       setLoading(false);
     });
@@ -76,33 +70,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setSession(null);
     setSubscriptionTier('free');
-    window.location.reload(); // Hard reset to clear all React states & memory
-  };
-
-  const signInAsGuest = () => {
-    // Creating a mock user for demo purposes
-    const mockUser = {
-      id: 'demo-user-' + Math.random().toString(36).substr(2, 9),
-      email: 'guest@example.com',
-      app_metadata: {},
-      user_metadata: { full_name: 'Guest User (Demo)' },
-      aud: 'authenticated',
-      created_at: new Date().toISOString()
-    } as User;
-    setUser(mockUser);
-    setSubscriptionTier('free');
-    setLoading(false);
+    setExpiresAt(null);
+    // Increment sessionKey to force full remount of Index — no page reload needed
+    setSessionKey(prev => prev + 1);
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      session, 
-      loading, 
-      subscriptionTier, 
+    <AuthContext.Provider value={{
+      user,
+      session,
+      loading,
+      subscriptionTier,
       isPro: subscriptionTier === 'pro',
-      signOut, 
-      signInAsGuest 
+      expiresAt,
+      sessionKey,
+      signOut,
     }}>
       {children}
     </AuthContext.Provider>

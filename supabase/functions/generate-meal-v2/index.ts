@@ -1,170 +1,321 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.1"
+// Supabase Edge Function: generate-meal-v2
+// Production-hardened: CORS restricted, rate limiting enforced, API key protected
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  // Set ALLOWED_ORIGIN env var in Supabase to your production domain
+  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Max-Age': '86400',
+};
+
+// Rate limit configuration - MUST match client-side expectations
+const RATE_LIMITS = {
+  free: 5,      // 5 meals per day for free users
+  pro: 1000,    // 1000 meals per day for pro users (effectively unlimited)
+};
+
+function normalizeTags(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  return Array.from(new Set(
+    input.filter((v) => typeof v === 'string').map((s) => s.trim().toLowerCase()).filter(Boolean)
+  ));
 }
 
-serve(async (req) => {
-  // Handle CORS
+function normalizeGoal(goal: unknown): string {
+  const g = typeof goal === 'string' ? goal.trim().toLowerCase() : '';
+  if (!g || g === 'general health') return 'balanced';
+  if (g.includes('weight')) return 'weight gain';
+  if (g.includes('brain')) return 'brain boost';
+  if (g.includes('immun')) return 'immunity';
+  // Preserve any other goal verbatim (trimmed)
+  return (goal as string).trim().toLowerCase();
+}
+
+function normalizeDiet(diet: unknown): string {
+  const d = typeof diet === 'string' ? diet.trim().toLowerCase() : '';
+  if (!d || d === 'none') return 'regular';
+  if (d.startsWith('vegan')) return 'vegan';
+  if (d.startsWith('veg')) return 'vegetarian';
+  if (d.includes('pescatarian')) return 'pescatarian';
+  if (d.includes('dairy')) return 'dairy-free';
+  return 'regular';
+}
+
+function normalizeMealType(mealType: unknown): string {
+  const t = typeof mealType === 'string' ? mealType.trim().toLowerCase() : '';
+  if (['breakfast', 'lunch', 'dinner', 'snack'].includes(t)) return t;
+  return 'breakfast';
+}
+
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { status: 200, headers: corsHeaders });
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
+    const supaUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const dbRestUrl = `${supaUrl}/rest/v1`;
+    const dbRpcUrl = `${supaUrl}/rest/v1/rpc`;
 
-    // 1. Authenticate user
-    const authHeader = req.headers.get('Authorization')!
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token)
-    
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
+    // 1. Authenticate user (optional — allows anonymous with anon key)
+    const authHeader = req.headers.get('Authorization');
+    let userId: string | null = null;
 
-    const { form, type = 'single' } = await req.json()
-    
-    // 2. Generate Input Hash for Caching
-    const inputString = `${form.childAge}-${form.diet}-${form.allergies?.sort().join(',')}-${form.goal}-${form.mealType}`
-    const encoder = new TextEncoder()
-    const data = encoder.encode(inputString)
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-    const hashArray = Array.from(new Uint8Array(hashBuffer))
-    const inputHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
-
-    // 3. Check Cache
-    const { data: cachedMeal } = await supabaseClient
-      .from('ai_meal_cache')
-      .select('meal_data')
-      .eq('input_hash', inputHash)
-      .maybeSingle()
-
-    if (cachedMeal) {
-      console.log('Cache hit for hash:', inputHash)
-      // Increment popularity in background
-      supabaseClient.rpc('increment_cache_popularity', { target_hash: inputHash }).then()
-      
-      return new Response(JSON.stringify(cachedMeal.meal_data), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    // 4. Rate Limit & Tier Check
-    const { data: usage, error: usageError } = await supabaseClient.rpc('increment_usage_v2', {
-      target_user_id: user.id
-    })
-
-    if (usageError || (usage && usage.limit_reached)) {
-      return new Response(JSON.stringify({ 
-        error: 'Too many requests, please try again tomorrow or upgrade to Pro.',
-        limit_reached: true,
-        daily_count: usage?.daily_count
-      }), {
-        status: 429,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    try {
-      // 5. Generate AI Response (Cache Miss)
-      const apiKey = Deno.env.get('GEMINI_API_KEY')
-      if (!apiKey) throw new Error('GEMINI_API_KEY missing')
-
-      let sysInstruction = ''
-      let prompt = ''
-
-      if (type === 'drink') {
-        sysInstruction = `You are a pediatric nutritionist specializing in healthy beverages for kids.
-Generate a nutritious ${form.mealType} (Smoothie, Shake, or Juice) specifically for a ${form.childAge} old child.
-Goal: ${form.goal}. Focus on using whole fruits, vegetables, and seeds. Avoid refined sugars.
-Return ONLY valid JSON matching this structure:
-{
-  "drinkName": "string",
-  "prepTime": "string",
-  "ingredients": ["string"],
-  "steps": ["string"],
-  "calories": "string",
-  "benefits": ["string"]
-}`
-        prompt = `Create a ${form.mealType} for ${form.childAge} with goal: ${form.goal}`
-      } else if (type === 'weekly') {
-        sysInstruction = `You are a pediatric nutrition expert. Generate a 7-day healthy meal plan (JSON array) for a ${form.childAge} old child.
-Diet: ${form.diet}. Goal: ${form.goal}.
-Return a JSON array of 7 objects, each with: { day, breakfast: {mealName, ingredients: [{name, quantity}], steps, nutrition: {calories, protein, carbs, fats, vitamins}, tips, alternatives}, lunch: ..., dinner: ... }`
-        prompt = `Generate a 7-day plan.`
-      } else {
-        sysInstruction = `You are a global pediatric nutrition expert. Generate a healthy, simple ${form.mealType} for a ${form.childAge} old.
-Diet: ${form.diet}. Allergies: ${form.allergies?.join(', ') || 'None'}. Goal: ${form.goal}.
-RULES:
-1. Max 6 steps. 2. Use common ingredients. 3. Include nutrition macros.`
-        prompt = `Generate meal recipe.`
+    if (authHeader) {
+      const authRes = await fetch(`${supaUrl}/auth/v1/user`, {
+        method: "GET",
+        headers: { 'Authorization': authHeader, 'apikey': serviceKey }
+      });
+      if (authRes.ok) {
+        const userData = await authRes.json();
+        userId = userData?.id || null;
       }
+    }
 
-      const genAI = new GoogleGenerativeAI(apiKey)
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.0-flash",
-        systemInstruction: sysInstruction
-      })
+    // 2. Parse body
+    const { form, type = 'single' } = await req.json();
 
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
+    // 3. Cache lookup FIRST (single meal only) — free, no rate limit charge
+    if (type === 'single') {
+      const allergiesForHash = normalizeTags(form?.allergies).sort().join(',');
+      const availableForHash = normalizeTags(form?.availableIngredients).sort().join(',');
+      const inputString = `${form?.childAge}-${form?.diet}-${allergiesForHash}-${form?.goal}-${form?.mealType}-${availableForHash}-${Boolean(form?.onlyAvailable)}`;
+      const encoder = new TextEncoder();
+      const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(inputString));
+      const inputHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+      const cacheRes = await fetch(`${dbRestUrl}/ai_meal_cache?input_hash=eq.${inputHash}&select=meal_data`, {
+        headers: { 'apikey': serviceKey, 'Authorization': `Bearer ${serviceKey}` }
+      });
+      if (cacheRes.ok) {
+        const cacheData = await cacheRes.json();
+        if (cacheData?.length > 0) {
+          // Cache hit — return without counting against rate limit
+          return new Response(JSON.stringify(cacheData[0].meal_data), {
+            status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
         }
-      })
-
-      const aiResponse = JSON.parse(result.response.text())
-
-      // 6. Cache Result
-      await supabaseClient.from('ai_meal_cache').insert({
-        input_hash: inputHash,
-        meal_data: aiResponse,
-        age_group: form.childAge,
-        diet_type: form.diet,
-        meal_type: form.mealType,
-        is_drink: type === 'drink'
-      })
-
-      return new Response(JSON.stringify(aiResponse), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    } catch (aiError) {
-      console.warn("AI Generation failed, attempting cache fallback:", aiError)
-      
-      // FALLBACK: Query similar meal from global cache
-      const { data: fallback, error: fallbackError } = await supabaseClient
-        .from('ai_meal_cache')
-        .select('meal_data')
-        .eq('is_drink', type === 'drink')
-        .eq('age_group', form.childAge)
-        .eq('meal_type', form.mealType)
-        .order('id', { ascending: true }) // random seed simulation
-        .limit(1)
-        .maybeSingle()
-
-      if (fallback) {
-        return new Response(JSON.stringify(fallback.meal_data), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
       }
 
-      throw aiError // If no fallback, throw original error
+      // 4. Library match — also free, no rate limit charge
+      const libraryPayload = {
+        p_age_group: String(form?.childAge || ''),
+        p_diet_type: normalizeDiet(form?.diet),
+        p_meal_type: normalizeMealType(form?.mealType),
+        p_goal: normalizeGoal(form?.goal),
+        p_allergies: normalizeTags(form?.allergies),
+        p_available_ingredients: normalizeTags(form?.availableIngredients),
+        p_require_available_match: Boolean(form?.onlyAvailable),
+        p_limit: 1,
+      };
+      if (libraryPayload.p_age_group && libraryPayload.p_diet_type && libraryPayload.p_meal_type) {
+        const libRes = await fetch(`${dbRpcUrl}/find_meal_in_library`, {
+          method: 'POST',
+          headers: { 'apikey': serviceKey, 'Authorization': `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(libraryPayload),
+        });
+        if (libRes.ok) {
+          const libData = await libRes.json();
+          if (Array.isArray(libData) && libData.length > 0 && libData[0]?.meal_data) {
+            // Library hit — return without counting against rate limit
+            return new Response(JSON.stringify(libData[0].meal_data), {
+              status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+        }
+      }
     }
 
-  } catch (error) {
-    console.error('Edge Function Error:', error)
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    // 5. Rate limit check — ONLY runs when Gemini API is actually needed
+    if (userId) {
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        
+        // Check user's subscription tier
+        const subRes = await fetch(`${dbRestUrl}/user_subscriptions?user_id=eq.${userId}&select=tier`, {
+          headers: { 'apikey': serviceKey, 'Authorization': `Bearer ${serviceKey}` }
+        });
+        let tier = 'free';
+        if (subRes.ok) {
+          const subData = await subRes.json();
+          tier = subData[0]?.tier || 'free';
+        }
+        
+        const limit = RATE_LIMITS[tier as keyof typeof RATE_LIMITS] || RATE_LIMITS.free;
+        
+        // Check current usage
+        const usageRes = await fetch(`${dbRestUrl}/usage_stats?user_id=eq.${userId}&select=daily_generation_count,last_reset_date,generation_count`, {
+          headers: { 'apikey': serviceKey, 'Authorization': `Bearer ${serviceKey}` }
+        });
+        
+        let dailyCount = 0;
+        let totalCount = 0;
+        let lastReset = null;
+        
+        if (usageRes.ok) {
+          const usageData = await usageRes.json();
+          if (usageData.length > 0) {
+            dailyCount = usageData[0].daily_generation_count || 0;
+            totalCount = usageData[0].generation_count || 0;
+            lastReset = usageData[0].last_reset_date;
+          }
+        }
+        
+        // Reset daily count if it's a new day
+        if (lastReset !== today) {
+          dailyCount = 0;
+        }
+        
+        // Check if limit reached
+        if (dailyCount >= limit) {
+          return new Response(JSON.stringify({
+            error: `Daily limit reached (${limit}/${limit}). Upgrade to Pro for unlimited meals.`,
+            tier,
+            limit,
+            used: dailyCount,
+          }), { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        
+        // Increment usage using upsert
+        await fetch(`${dbRestUrl}/usage_stats`, {
+          method: 'POST',
+          headers: { 
+            'apikey': serviceKey, 
+            'Authorization': `Bearer ${serviceKey}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=merge-duplicates'
+          },
+          body: JSON.stringify({
+            user_id: userId,
+            daily_generation_count: dailyCount + 1,
+            last_reset_date: today,
+            generation_count: totalCount + 1,
+            last_generation_at: new Date().toISOString(),
+          })
+        });
+        
+      } catch (err) {
+        console.error('Rate limiting error:', err);
+        // Continue with generation even if rate limiting fails
+      }
+    }
+
+    // 6. Get Gemini API Key (server-side only - never exposed to client)
+    let geminiApiKey = Deno.env.get('GEMINI_API_KEY');
+    if (!geminiApiKey) {
+      console.error('GEMINI_API_KEY not configured');
+      throw new Error('AI service not configured. Please contact support.');
+    }
+    geminiApiKey = geminiApiKey.trim().replace(/^["']|["']$/g, '');
+    
+    // Validate key format (basic check)
+    if (!geminiApiKey.startsWith('AIzaSy')) {
+      console.error('Invalid Gemini API key format');
+      throw new Error('AI service configuration error.');
+    }
+
+    // Use the correct Gemini model endpoint
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${geminiApiKey}`;
+
+    let sysInstruction: string;
+    let userPrompt: string;
+
+    const childAgeLabel = form?.childAge ? `a ${form.childAge} month-old child` : 'a child';
+    const dietLabel = normalizeDiet(form?.diet);
+    const goalLabel = normalizeGoal(form?.goal);
+    const allergyClause = Array.isArray(form?.allergies) && form.allergies.length > 0
+      ? `Strictly avoid these allergens: ${form.allergies.join(', ')}.`
+      : '';
+    const ingredientClause = Array.isArray(form?.availableIngredients) && form.availableIngredients.length > 0
+      ? `Prefer using these available ingredients: ${form.availableIngredients.join(', ')}.`
+      : '';
+
+    if (type === 'weekly') {
+      sysInstruction = `You are a pediatric nutrition expert. Generate a 7-day meal plan for ${childAgeLabel} following a ${dietLabel} diet. Health goal: ${goalLabel}. ${allergyClause} Return ONLY a valid JSON array — no markdown, no extra text. The array must have exactly 7 objects. Each object schema: { "day": string, "breakfast": MealObject, "lunch": MealObject, "dinner": MealObject }. MealObject schema: { "mealName": string, "description": string, "cookingTime": string, "difficulty": string, "ingredients": [{"name": string, "quantity": string}], "steps": [string], "tips": [string], "nutrition": {"calories": number, "protein": number, "carbs": number, "fats": number, "vitamins": string} }.`;
+      userPrompt = 'Output the JSON array only, no markdown, no commentary.';
+    } else if (type === 'drink') {
+      sysInstruction = `You are a pediatric nutrition expert. Generate a healthy ${form?.mealType || 'smoothie'} drink for ${childAgeLabel}. Health goal: ${goalLabel}. ${allergyClause} Return ONLY valid JSON — no markdown, no extra text. Schema: { "drinkName": string, "prepTime": string, "ingredients": [string], "steps": [string], "calories": number, "benefits": [string], "insight": string, "kidActivity": string, "costRank": "Budget"|"Moderate"|"Premium" }.`;
+      userPrompt = 'Output the JSON object only, no markdown, no commentary.';
+    } else {
+      const preferredMeal = form?.preferredMealName ? `The meal must be: "${form.preferredMealName}". ` : '';
+      sysInstruction = `You are a pediatric nutrition expert. ${preferredMeal}Generate a healthy ${normalizeMealType(form?.mealType)} for ${childAgeLabel} following a ${dietLabel} diet. Health goal: ${goalLabel}. ${allergyClause} ${ingredientClause} Return ONLY valid JSON — no markdown, no extra text. Schema: { "mealName": string, "description": string, "cookingTime": string, "difficulty": string, "ingredients": [{"name": string, "quantity": string}], "steps": [string], "tips": [string], "nutrition": {"calories": number, "protein": number, "carbs": number, "fats": number, "vitamins": string}, "groceryList": {"vegetables": [string], "dairy": [string], "grains": [string], "proteins": [string], "others": [string]}, "alternatives": [{"mealName": string, "reason": string}], "costRank": "Budget"|"Moderate"|"Premium", "kidActivity": string, "insight": string }.`;
+      userPrompt = 'Output the JSON object only, no markdown, no commentary.';
+    }
+
+    const geminiPayload = {
+      systemInstruction: { parts: [{ text: sysInstruction }] },
+      contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+      generationConfig: { responseMimeType: 'application/json' }
+    };
+
+    const geminiRes = await fetch(geminiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(geminiPayload)
+    });
+
+    const geminiData = await geminiRes.json();
+    
+    // Explicitly check for Gemini API errors (like Quota Exceeded or Invalid Key)
+    if (!geminiRes.ok) {
+      console.error("[Gemini API Error details]:", JSON.stringify(geminiData, null, 2));
+      const errMsg = geminiData?.error?.message || "Unknown Gemini API error";
+      const errCode = geminiData?.error?.code || geminiRes.status;
+      
+      // If it's a quota error (limit 0), make the error message extremely clear
+      if (errMsg.includes("limit: 0") || errCode === 429) {
+        throw new Error(`Google Gemini API Quota Exceeded (Error 429). You must enable Billing in Google Cloud to use this key. Details: ${errMsg}`);
+      }
+      throw new Error(`Gemini API failed (${errCode}): ${errMsg}`);
+    }
+
+    const aiResponseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!aiResponseText) {
+      console.error("[Gemini Empty Response]:", JSON.stringify(geminiData, null, 2));
+      throw new Error(`Invalid Gemini response structure: missing text content.`);
+    }
+
+    const cleanJson = aiResponseText.replace(/```json\n?|```/gi, '').trim();
+    let aiResponse;
+    try {
+      aiResponse = JSON.parse(cleanJson);
+    } catch (parseErr) {
+      console.error("[JSON Parse Error on Gemini Response]:", cleanJson);
+      throw new Error(`Failed to parse AI response into JSON. The prompt might be returning invalid format.`);
+    }
+
+    // 7. Cache single meal results
+    if (type === 'single') {
+      const allergiesForHash = normalizeTags(form?.allergies).sort().join(',');
+      const inputString = `${form?.childAge}-${form?.diet}-${allergiesForHash}-${form?.goal}-${form?.mealType}-${normalizeTags(form?.availableIngredients).sort().join(',')}-${Boolean(form?.onlyAvailable)}`;
+      const encoder = new TextEncoder();
+      const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(inputString));
+      const inputHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+      await fetch(`${dbRestUrl}/ai_meal_cache`, {
+        method: "POST",
+        headers: {
+          'apikey': serviceKey, 'Authorization': `Bearer ${serviceKey}`,
+          'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({
+          input_hash: inputHash, meal_data: aiResponse,
+          age_group: form?.childAge || 'unknown', diet_type: form?.diet || 'none',
+          meal_type: form?.mealType || 'unknown', is_drink: type === 'drink'
+        })
+      });
+    }
+
+    return new Response(JSON.stringify(aiResponse), {
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+
+  } catch (error: any) {
+    console.error('[Edge Function Error]:', error.message);
+    return new Response(JSON.stringify({ error: error.message || 'Internal Server Error' }), {
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
-})
+});

@@ -103,6 +103,45 @@
   .btn-press {
     @apply transition-transform duration-150 active:scale-95;
   }
+  .premium-3d-card {
+    position: relative;
+    border-radius: 2rem;
+    background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.05));
+    transform: translateY(-2px);
+    transition: all 0.3s ease;
+    border: 2px solid hsl(var(--sage)/0.4);
+    box-shadow: none;
+  }
+  .premium-3d-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 2rem;
+    transform: translateY(12px);
+    filter: blur(25px);
+    background: rgba(0, 0, 0, 0.25);
+    z-index: -1;
+    transition: all 0.3s ease;
+  }
+  .premium-3d-card:hover {
+    transform: translateY(-4px);
+  }
+  .premium-3d-card:hover::before {
+    transform: translateY(16px);
+    filter: blur(30px);
+    background: rgba(0, 0, 0, 0.3);
+  }
+  .premium-3d-card:active {
+    transform: translateY(0.5px);
+  }
+  .premium-3d-card:active::before {
+    transform: translateY(4px);
+    filter: blur(10px);
+    background: rgba(0, 0, 0, 0.15);
+  }
+  .icon-soft-shadow {
+    filter: drop-shadow(0px 6px 12px rgba(0, 0, 0, 0.25));
+  }
 }
 
 @keyframes bounce-gentle {
@@ -135,4 +174,58 @@
   0% { transform: translateY(0) scale(1); opacity: 0; }
   50% { transform: translateY(-15px) scale(1.2); opacity: 0.4; }
   100% { transform: translateY(-30px) scale(1.5); opacity: 0; }
+}
+
+/* 3D Card Styles for Homepage */
+.card-3d-purple,
+.card-3d-blue,
+.card-3d-red,
+.card-3d-yellow {
+  position: relative;
+  border-radius: 1.5rem;
+  transform: translateY(-2px);
+  transition: all 0.3s ease;
+  box-shadow: none;
+}
+.card-3d-purple::before,
+.card-3d-blue::before,
+.card-3d-red::before,
+.card-3d-yellow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 1.5rem;
+  transform: translateY(12px);
+  filter: blur(25px);
+  background: rgba(0, 0, 0, 0.25);
+  z-index: -1;
+  transition: all 0.3s ease;
+}
+.card-3d-purple:hover,
+.card-3d-blue:hover,
+.card-3d-red:hover,
+.card-3d-yellow:hover {
+  transform: translateY(-4px);
+}
+.card-3d-purple:hover::before,
+.card-3d-blue:hover::before,
+.card-3d-red:hover::before,
+.card-3d-yellow:hover::before {
+  transform: translateY(16px);
+  filter: blur(30px);
+  background: rgba(0, 0, 0, 0.3);
+}
+.card-3d-purple:active,
+.card-3d-blue:active,
+.card-3d-red:active,
+.card-3d-yellow:active {
+  transform: translateY(0.5px);
+}
+.card-3d-purple:active::before,
+.card-3d-blue:active::before,
+.card-3d-red:active::before,
+.card-3d-yellow:active::before {
+  transform: translateY(4px);
+  filter: blur(10px);
+  background: rgba(0, 0, 0, 0.15);
 }
